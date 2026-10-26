@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Переводчик</title>
+<style>
+:root{
+  --bg:#eef0f5; --surface:#ffffff; --surface-2:#f6f7fb; --line:#dfe2ec;
+  --fg:#161a2b; --muted:#5d6380; --accent:#3346c7; --accent-fg:#ffffff; --accent-soft:#e3e7fb;
+  --danger:#b3261e; --scrim:rgba(15,18,32,.45);
+  --f-body:Roboto, "Noto Sans", system-ui, sans-serif;
+  --f-mono:"Roboto Mono", "Noto Sans Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#0f1220; --surface:#171b2e; --surface-2:#1d2238; --line:#2c3250;
+  --fg:#e8eaf4; --muted:#9aa0bd; --accent:#8b9bff; --accent-fg:#0f1220; --accent-soft:#252c52;
+  --danger:#ffb4ab; --scrim:rgba(0,0,0,.6); color-scheme:dark }}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:16px/1.5 var(--f-body);display:flex;flex-direction:column;overflow:hidden}
+
+/* top bar */
+.top{display:flex;align-items:center;justify-content:space-between;padding:10px 8px 6px 16px;flex:none}
+.top h1{margin:0;font-size:20px;font-weight:600;letter-spacing:-.01em}
+.top .route{font:500 12px/1.2 var(--f-mono);color:var(--muted);margin-top:2px}
+.icon-btn{width:44px;height:44px;border-radius:12px;border:0;background:transparent;color:var(--fg);display:grid;place-items:center;cursor:pointer;flex:none}
+.icon-btn:active{background:var(--accent-soft)}
+.icon-btn svg{width:22px;height:22px}
+.icon-btn:disabled{opacity:.35}
+
+/* scroll area */
+main{flex:1;overflow-y:auto;padding:4px 12px 12px;display:flex;flex-direction:column;gap:10px;-webkit-overflow-scrolling:touch}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:18px;display:flex;flex-direction:column}
+.card.result{background:var(--surface-2)}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 6px 0 14px;min-height:44px}
+.chip{font:500 13px/1 var(--f-body);padding:6px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.chip.idle{background:transparent;border:1px dashed var(--line);color:var(--muted)}
+textarea{font:400 19px/1.5 var(--f-body);color:var(--fg);background:transparent;border:0;outline:none;resize:none;padding:6px 14px 8px;width:100%;min-height:120px;max-height:45vh}
+textarea::placeholder{color:var(--muted)}
+.out{font:400 19px/1.5 var(--f-body);padding:6px 14px 10px;min-height:96px;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
+.out.dim{color:var(--muted)}
+.out.err{color:var(--danger);font-size:15px}
+.card-foot{display:flex;align-items:center;justify-content:space-between;gap:4px;padding:0 4px 4px 14px}
+.meta{font:400 12px/1 var(--f-mono);color:var(--muted)}
+.tools{display:flex;gap:0}
+
+.notes{padding:12px 14px;font-size:15px;white-space:pre-wrap;border-top:1px solid var(--line);color:var(--fg)}
+.notes b{display:block;font:500 11px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+
+.hist-title{display:flex;justify-content:space-between;align-items:center;font:500 11px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:8px 4px 0}
+.hist-title button{background:none;border:0;color:var(--muted);font:500 12px var(--f-body);padding:8px}
+.hist{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--surface)}
+.hitem{display:flex;flex-direction:column;gap:2px;padding:10px 14px;border:0;border-top:1px solid var(--line);background:transparent;color:var(--fg);text-align:left;font:inherit}
+.hitem:first-child{border-top:0}
+.hitem:active{background:var(--surface-2)}
+.hitem .r{font:500 11px/1.4 var(--f-mono);color:var(--accent)}
+.hitem .t{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hitem .t2{color:var(--muted)}
+.empty{color:var(--muted);font-size:14px;padding:12px 14px}
+
+/* bottom bar */
+.bottom{flex:none;background:var(--bg);border-top:1px solid var(--line);padding:8px 0 10px;display:flex;flex-direction:column;gap:8px}
+.langs{display:flex;gap:6px;overflow-x:auto;padding:0 12px;scrollbar-width:none}
+.langs::-webkit-scrollbar{display:none}
+.lang{flex:none;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:8px 14px;font:500 14px/1 var(--f-body)}
+.lang.on{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.go-row{display:flex;gap:8px;padding:0 12px;align-items:center}
+.go{flex:1;height:50px;border-radius:14px;border:0;background:var(--accent);color:var(--accent-fg);font:600 16px var(--f-body)}
+.go:active{filter:brightness(1.1)}
+.go:disabled{opacity:.6}
+.engine-pill{flex:none;height:50px;padding:0 14px;border-radius:14px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font:500 13px/1.15 var(--f-body);text-align:left}
+.engine-pill small{display:block;color:var(--muted);font-size:11px}
+
+/* sheets */
+.scrim{position:fixed;inset:0;background:var(--scrim);display:flex;align-items:flex-end;z-index:10}
+.sheet{background:var(--surface);width:100%;max-height:88vh;overflow-y:auto;border-radius:22px 22px 0 0;padding:8px 16px 20px;display:flex;flex-direction:column;gap:16px}
+.grab{width:36px;height:4px;border-radius:2px;background:var(--line);margin:4px auto 0}
+.sheet h2{margin:0;font-size:18px;font-weight:600}
+.field{display:flex;flex-direction:column;gap:8px}
+.field > label,.field > .lbl{font:500 11px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.hint{font-size:13px;color:var(--muted);margin:0}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg button{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:12px;padding:10px 12px;font:500 14px/1.2 var(--f-body);text-align:left;flex:1 1 auto}
+.seg button small{display:block;font-weight:400;font-size:12px;color:var(--muted)}
+.seg button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.seg button.on small{color:var(--accent)}
+input[type=password],input[type=text],input[type=search]{width:100%;font:400 16px var(--f-body);padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);color:var(--fg);outline:none}
+input:focus{border-color:var(--accent)}
+.row{display:flex;gap:8px;align-items:center}
+.row input{flex:1}
+.small-btn{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:12px;padding:12px;font:500 14px var(--f-body)}
+.switch{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:4px 0}
+.switch span{font-size:15px}
+.switch input{width:44px;height:26px;accent-color:var(--accent)}
+.lang-list{display:flex;flex-direction:column}
+.lang-list button{border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--fg);text-align:left;padding:14px 4px;font:400 16px var(--f-body);display:flex;justify-content:space-between}
+.lang-list button.on{color:var(--accent);font-weight:600}
+.lang-list button span{font:400 12px var(--f-mono);color:var(--muted)}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div>
+    <h1>Переводчик</h1>
+    <div class="route" id="route">авто → RU · RU → EN</div>
+  </div>
+  <button class="icon-btn" id="settingsBtn" aria-label="Настройки">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+  </button>
+</div>
+
+<main id="main">
+  <section class="card">
+    <div class="card-head">
+      <span class="chip idle" id="detChip">язык определится сам</span>
+      <div class="tools">
+        <button class="icon-btn" id="pasteBtn" aria-label="Вставить">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+        </button>
+        <button class="icon-btn" id="clearBtn" aria-label="Очистить">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+    </div>
+    <textarea id="src" placeholder="Текст на любом языке или по-русски" spellcheck="false" autocapitalize="sentences"></textarea>
+    <div class="card-foot"><span class="meta" id="count">0</span><span></span></div>
+  </section>
+
+  <section class="card result">
+    <div class="card-head">
+      <span class="chip idle" id="outChip">перевод</span>
+      <div class="tools">
+        <button class="icon-btn" id="speakBtn" aria-label="Озвучить" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
+        </button>
+        <button class="icon-btn" id="copyBtn" aria-label="Копировать" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <button class="icon-btn" id="shareBtn" aria-label="Поделиться" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="out dim" id="out">Начните печатать — перевод появится здесь.</div>
+    <div class="card-foot">
+      <span class="meta" id="outMeta"></span>
+      <div class="tools">
+        <button class="icon-btn" id="backBtn" aria-label="Обратный перевод" disabled title="Обратный перевод">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4M3 8l4-4 4 4M17 8v12M21 16l-4 4-4-4"/></svg>
+        </button>
+        <button class="icon-btn" id="explainBtn" aria-label="Разбор нюансов" hidden disabled title="Разбор нюансов (Claude)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="notes" id="notes" hidden><b>Нюансы перевода</b><span id="notesText"></span></div>
+  </section>
+
+  <div class="hist-title"><span>История</span><button id="clearHist">Очистить</button></div>
+  <div class="hist" id="hist"></div>
+</main>
+
+<div class="bottom">
+  <div class="langs" id="langs"></div>
+  <div class="go-row">
+    <button class="engine-pill" id="enginePill"></button>
+    <button class="go" id="goBtn">Перевести</button>
+  </div>
+</div>
+
+<!-- Settings -->
+<div class="scrim" id="settings" hidden>
+  <div class="sheet" role="dialog" aria-label="Настройки">
+    <div class="grab"></div>
+    <h2>Настройки</h2>
+
+    <div class="field">
+      <span class="lbl">Движок перевода</span>
+      <div class="seg" id="engineSeg">
+        <button data-v="google">Google<small>бесплатно, мгновенно</small></button>
+        <button data-v="claude">Claude<small>максимальное качество</small></button>
+      </div>
+    </div>
+
+    <div class="field" id="claudeFields">
+      <label for="apiKey">API-ключ Anthropic</label>
+      <div class="row">
+        <input type="password" id="apiKey" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button class="small-btn" id="showKey">Показать</button>
+      </div>
+      <p class="hint">Ключ создаётся на console.anthropic.com → API Keys. Хранится только на этом телефоне. Оплата по тарифам API.</p>
+      <span class="lbl">Модель</span>
+      <div class="seg" id="modelSeg">
+        <button data-v="claude-sonnet-5-5">Sonnet 5.5<small>рекомендуется</small></button>
+        <button data-v="claude-opus-5-5">Opus 5.5<small>максимум</small></button>
+        <button data-v="claude-haiku-5-5">Haiku 5.5<small>быстро, дёшево</small></button>
+      </div>
+      <span class="lbl">Стиль</span>
+      <div class="seg" id="toneSeg">
+        <button data-v="auto">Как в оригинале</button>
+        <button data-v="formal">Деловой</button>
+        <button data-v="casual">Разговорный</button>
+      </div>
+    </div>
+
+    <label class="switch" for="autoTr"><span>Переводить во время набора (Google)</span><input type="checkbox" id="autoTr"></label>
+
+    <button class="small-btn" id="closeSettings">Готово</button>
+  </div>
+</div>
+
+<!-- All languages -->
+<div class="scrim" id="langSheet" hidden>
+  <div class="sheet" role="dialog" aria-label="Язык перевода">
+    <div class="grab"></div>
+    <h2>С русского на…</h2>
+    <input type="search" id="langSearch" placeholder="Поиск языка">
+    <div class="lang-list" id="langList"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const LANGS = [
+  ["en","Английский","English"],["zh","Китайский","Simplified Chinese"],["de","Немецкий","German"],
+  ["fr","Французский","French"],["es","Испанский","Spanish"],["it","Итальянский","Italian"],
+  ["ja","Японский","Japanese"],["ko","Корейский","Korean"],["tr","Турецкий","Turkish"],["pl","Польский","Polish"],
+  ["uk","Украинский","Ukrainian"],["pt","Португальский","Portuguese (Brazil)"],["ar","Арабский","Arabic"],
+  ["hi","Хинди","Hindi"],["kk","Казахский","Kazakh"],["uz","Узбекский","Uzbek"],["be","Белорусский","Belarusian"],
+  ["nl","Нидерландский","Dutch"],["sv","Шведский","Swedish"],["cs","Чешский","Czech"],["el","Греческий","Greek"],
+  ["he","Иврит","Hebrew"],["vi","Вьетнамский","Vietnamese"],["th","Тайский","Thai"],["id","Индонезийский","Indonesian"],
+  ["fa","Персидский","Persian"],["ka","Грузинский","Georgian"],["hy","Армянский","Armenian"],["az","Азербайджанский","Azerbaijani"],
+  ["sr","Сербский","Serbian"],["ro","Румынский","Romanian"],["hu","Венгерский","Hungarian"],["fi","Финский","Finnish"],
+  ["bg","Болгарский","Bulgarian"],["ky","Киргизский","Kyrgyz"],["tg","Таджикский","Tajik"],["tk","Туркменский","Turkmen"],
+  ["lv","Латышский","Latvian"],["lt","Литовский","Lithuanian"],["et","Эстонский","Estonian"],["da","Датский","Danish"],
+  ["no","Норвежский","Norwegian"],["ms","Малайский","Malay"],["bn","Бенгальский","Bengali"],["ur","Урду","Urdu"]
+];
+const PINNED = ["en","zh","de","fr","es","it","ja","ko","tr","pl","uk"];
+const byCode = Object.fromEntries(LANGS.map(l => [l[0], l]));
+const $ = id => document.getElementById(id);
+const native = window.Android || null;
+
+/* ---------- prefs ---------- */
+const prefs = {
+  get(k, d){ try{ const v = native ? native.getPref(k) : localStorage.getItem(k); return v == null ? d : JSON.parse(v); }catch(e){ return d; } },
+  set(k, v){ try{ const s = JSON.stringify(v); native ? native.setPref(k, s) : localStorage.setItem(k, s); }catch(e){} }
+};
+const S = {
+  target: prefs.get("target","en"),
+  engine: prefs.get("engine","google"),
+  apiKey: prefs.get("apiKey",""),
+  model: prefs.get("model","claude-sonnet-5-5"),
+  tone: prefs.get("tone","auto"),
+  auto: prefs.get("auto", true),
+  history: prefs.get("history", []),
+  draft: prefs.get("draft", "")
+};
+if (!byCode[S.target]) S.target = "en";
+function save(k){ prefs.set(k, S[k]); }
+
+/* ---------- HTTP (native bridge without CORS, fetch fallback in a browser) ---------- */
+const waiting = new Map(); let reqId = 0;
+window.__native = (id, ok, status, text) => { const w = waiting.get(id); if (w){ waiting.delete(id); w({ok, status, text}); } };
+function http(method, url, headers, body){
+  if (native){
+    return new Promise(res => { const id = "r" + (++reqId); waiting.set(id, res); native.request(id, method, url, JSON.stringify(headers || {}), body || ""); });
+  }
+  return fetch(url, {method, headers, body}).then(async r => ({ok:r.ok, status:r.status, text: await r.text()}))
+    .catch(e => ({ok:false, status:0, text:String(e)}));
+}
+
+/* ---------- language helpers ---------- */
+function normCode(c){
+  c = String(c || "").toLowerCase();
+  if (c === "iw") return "he";
+  if (c.startsWith("zh")) return "zh";
+  if (c === "nb" || c === "nn") return "no";
+  return c.split("-")[0];
+}
+function langName(code, fallback){
+  if (code === "ru") return "Русский";
+  if (byCode[code]) return byCode[code][1];
+  if (fallback) return fallback.charAt(0).toUpperCase() + fallback.slice(1);
+  return (code || "?").toUpperCase();
+}
+function googleTl(code){ return code === "zh" ? "zh-CN" : code === "he" ? "iw" : code; }
+
+/* ---------- Google engine ---------- */
+function chunks(text, max = 900){
+  const out = []; let cur = "";
+  const push = s => { if (s) out.push(s); };
+  for (const line of text.split(/(?<=\n)/)){
+    if ((cur + line).length <= max){ cur += line; continue; }
+    push(cur); cur = "";
+    if (line.length <= max){ cur = line; continue; }
+    for (const sent of line.split(/(?<=[.!?。！？;])\s+/)){
+      if ((cur + " " + sent).length <= max){ cur = cur ? cur + " " + sent : sent; continue; }
+      push(cur); cur = "";
+      for (let i = 0; i < sent.length; i += max){ const p = sent.slice(i, i + max); if (p.length === max) push(p); else cur = p; }
+    }
+  }
+  push(cur);
+  return out;
+}
+async function gCall(text, tl){
+  const url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=" + encodeURIComponent(tl) + "&dt=t&q=" + encodeURIComponent(text);
+  const r = await http("GET", url);
+  if (!r.ok) throw new Error(r.status === 429 ? "Google временно ограничил запросы. Подождите минуту или включите Claude." : "Нет связи с Google (" + (r.status || "сеть") + ").");
+  const data = JSON.parse(r.text);
+  const tr = (data[0] || []).map(s => s && s[0] ? s[0] : "").join("");
+  return {text: tr, detected: normCode(data[2])};
+}
+async function translateGoogle(text, onPartial){
+  const parts = chunks(text);
+  const first = await gCall(parts[0], "ru");
+  const from = first.detected;
+  const to = from === "ru" ? S.target : "ru";
+  onPartial && onPartial({from, to});
+  const results = [];
+  if (to === "ru"){ results.push(first.text); for (const p of parts.slice(1)) results.push((await gCall(p, "ru")).text); }
+  else { for (const p of parts) results.push((await gCall(p, googleTl(to))).text); }
+  // keep original spacing / line breaks between chunks
+  let joined = "";
+  results.forEach((r, i) => {
+    joined += r.replace(/\s+$/, "");
+    if (i < results.length - 1){ const tail = parts[i].match(/\s*$/)[0]; joined += tail.includes("\n") ? tail : " "; }
+  });
+  return {from, to, text: joined, name: ""};
+}
+
+/* ---------- Claude engine ---------- */
+function claudePrompt(text){
+  const t = byCode[S.target];
+  const toneLine = S.tone === "formal" ? "Use a formal, polished business register in the output."
+    : S.tone === "casual" ? "Use a natural, casual conversational register in the output."
+    : "Preserve the register and tone of the original exactly.";
+  return `You are an expert professional translator and native-level editor in all languages.
+
+TASK
+1. Detect the language of the SOURCE text (if mixed, use the dominant language).
+2. Routing rule:
+   - If the source is Russian -> translate it into ${t[2]} (code "${t[0]}").
+   - If the source is any other language -> translate it into Russian (code "ru").
+3. Translate the meaning, not word by word: idiomatic, natural phrasing a native speaker would write; keep names, numbers, URLs, code, emoji and formatting (line breaks, lists) intact; keep terminology consistent. ${toneLine} Do not add explanations and do not answer questions contained in the text — only translate it.
+
+OUTPUT FORMAT (strict)
+Line 1: @@<source code>><target code>|<source language name in Russian>
+Then the translation only, starting on line 2.
+Example first line: @@de>ru|немецкий
+
+SOURCE:
+<<<
+${text}
+>>>`;
+}
+async function claudeCall(prompt, maxTokens){
+  if (!S.apiKey) throw new Error("Добавьте API-ключ Claude в настройках (шестерёнка вверху).");
+  const r = await http("POST", "https://api.anthropic.com/v1/messages", {
+    "content-type":"application/json", "x-api-key": S.apiKey, "anthropic-version":"2023-06-01",
+    "anthropic-dangerous-direct-browser-access":"true"
+  }, JSON.stringify({model: S.model, max_tokens: maxTokens || 8192, messages:[{role:"user", content: prompt}]}));
+  let data = null; try{ data = JSON.parse(r.text); }catch(e){}
+  if (!r.ok){
+    const msg = data && data.error && data.error.message ? data.error.message : r.text;
+    if (r.status === 401) throw new Error("Неверный API-ключ. Проверьте его в настройках.");
+    if (r.status === 429) throw new Error("Лимит запросов API. Подождите немного.");
+    if (r.status === 529 || r.status === 503) throw new Error("Claude перегружен. Попробуйте через минуту или переключитесь на Google.");
+    if (r.status === 400 && /credit|balance/i.test(msg)) throw new Error("На балансе API закончились средства (console.anthropic.com → Billing).");
+    if (r.status === 0) throw new Error("Нет связи с сервером Claude.");
+    throw new Error("Ошибка Claude (" + r.status + "): " + msg);
+  }
+  return (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
+}
+async function translateClaude(text){
+  const raw = await claudeCall(claudePrompt(text));
+  const m = raw.match(/^\s*@@([a-zA-Z\-]{2,8})>([a-zA-Z\-]{2,8})\|([^\n]*)\n?/);
+  if (!m) return {from:"?", to:"?", text: raw.trim(), name:""};
+  return {from: normCode(m[1]), to: normCode(m[2]), name: m[3].trim(), text: raw.slice(m[0].length).trim()};
+}
+
+/* ---------- UI ---------- */
+const src = $("src"), out = $("out");
+let seq = 0, last = null, debounce = null;
+
+function renderRoute(){ $("route").textContent = "авто → RU · RU → " + S.target.toUpperCase(); }
+function renderEnginePill(){
+  $("enginePill").innerHTML = S.engine === "claude"
+    ? "Claude<small>" + ({"claude-sonnet-5-5":"Sonnet","claude-opus-5-5":"Opus","claude-haiku-5-5":"Haiku"}[S.model] || "") + "</small>"
+    : "Google<small>бесплатно</small>";
+  $("explainBtn").hidden = !S.apiKey;
+}
+function renderLangs(){
+  const list = PINNED.includes(S.target) ? PINNED.slice() : [S.target, ...PINNED];
+  const el = $("langs"); el.innerHTML = "";
+  for (const c of list){
+    const b = document.createElement("button");
+    b.className = "lang" + (c === S.target ? " on" : ""); b.textContent = byCode[c][1];
+    b.onclick = () => setTarget(c);
+    el.append(b);
+  }
+  const more = document.createElement("button"); more.className = "lang"; more.textContent = "Ещё…";
+  more.onclick = openLangSheet; el.append(more);
+  const on = el.querySelector(".on"); if (on) on.scrollIntoView({inline:"center", block:"nearest"});
+  renderRoute();
+}
+function setTarget(c){
+  S.target = c; save("target"); renderLangs(); closeSheets();
+  if (last && last.from === "ru" && src.value.trim()) run();
+}
+function setChips(r){
+  const d = $("detChip"), o = $("outChip");
+  if (!r){ d.className = "chip idle"; d.textContent = "язык определится сам"; o.className = "chip idle"; o.textContent = "перевод"; return; }
+  d.className = "chip"; d.textContent = langName(r.from, r.name);
+  o.className = "chip"; o.textContent = langName(r.to);
+}
+function setOutState(enabled){ for (const id of ["copyBtn","shareBtn","speakBtn","backBtn","explainBtn"]) $(id).disabled = !enabled; }
+function updCount(){ $("count").textContent = src.value.length ? src.value.length.toLocaleString("ru-RU") : ""; }
+function autosize(){ src.style.height = "auto"; src.style.height = Math.min(src.scrollHeight, window.innerHeight * .45) + "px"; }
+
+async function run(){
+  const text = src.value.trim();
+  clearTimeout(debounce);
+  if (!text){ out.className = "out dim"; out.textContent = "Начните печатать — перевод появится здесь."; setChips(null); setOutState(false); last = null; return; }
+  const my = ++seq;
+  $("goBtn").disabled = true; $("goBtn").textContent = "Перевожу…";
+  $("notes").hidden = true;
+  if (S.engine === "claude" || !last){ out.className = "out dim"; out.textContent = "Перевожу…"; }
+  const t0 = performance.now();
+  try{
+    const r = S.engine === "claude"
+      ? await translateClaude(text)
+      : await translateGoogle(text, p => { if (my === seq) setChips(p); });
+    if (my !== seq) return;
+    setChips(r);
+    out.className = "out"; out.textContent = r.text;
+    $("outMeta").textContent = (S.engine === "claude" ? "Claude · " : "Google · ") + ((performance.now() - t0) / 1000).toFixed(1) + " с";
+    last = {src: text, out: r.text, from: r.from, to: r.to};
+    setOutState(true);
+    addHistory(last);
+  }catch(e){
+    if (my !== seq) return;
+    out.className = "out err"; out.textContent = e.message || String(e);
+    setOutState(false);
+  }finally{
+    if (my === seq){ $("goBtn").disabled = false; $("goBtn").textContent = "Перевести"; }
+  }
+}
+
+async function explain(){
+  if (!last) return;
+  $("notes").hidden = false; $("notesText").textContent = "Разбираю…"; $("explainBtn").disabled = true;
+  try{
+    const t = await claudeCall(`Ниже исходный текст и его перевод. Кратко, по-русски: 1) отметь 2–5 мест, где перевод неочевиден (идиомы, многозначные слова, вежливость, термины), и почему выбран именно такой вариант; 2) предложи 1–2 альтернативных варианта ключевых фраз с пометкой, когда они лучше. Без вступлений и без markdown, короткими пунктами через «•».
+
+ИСХОДНИК:
+${last.src}
+
+ПЕРЕВОД:
+${last.out}`, 2000);
+    $("notesText").textContent = t.trim();
+  }catch(e){ $("notesText").textContent = e.message; }
+  finally{ $("explainBtn").disabled = false; }
+}
+
+/* history */
+function addHistory(it){
+  const s = it.src.slice(0, 500);
+  S.history = [{s, o: it.out.slice(0, 500), f: it.from, t: it.to}, ...S.history.filter(h => h.s !== s)].slice(0, 30);
+  save("history"); renderHistory();
+}
+function renderHistory(){
+  const el = $("hist"); el.innerHTML = "";
+  if (!S.history.length){ const d = document.createElement("div"); d.className = "empty"; d.textContent = "Здесь появятся последние переводы."; el.append(d); return; }
+  for (const h of S.history){
+    const b = document.createElement("button"); b.className = "hitem";
+    const r = document.createElement("span"); r.className = "r"; r.textContent = String(h.f).toUpperCase() + " → " + String(h.t).toUpperCase();
+    const s = document.createElement("span"); s.className = "t"; s.textContent = h.s;
+    const o = document.createElement("span"); o.className = "t t2"; o.textContent = h.o;
+    b.append(r, s, o);
+    b.onclick = () => {
+      src.value = h.s; updCount(); autosize(); saveDraft();
+      out.className = "out"; out.textContent = h.o;
+      last = {src: h.s, out: h.o, from: h.f, to: h.t}; setChips({from: h.f, to: h.t}); setOutState(true);
+      $("main").scrollTo({top: 0, behavior: "smooth"});
+    };
+    el.append(b);
+  }
+}
+
+/* sheets */
+function openSheet(id){ $(id).hidden = false; }
+function closeSheets(){ $("settings").hidden = true; $("langSheet").hidden = true; }
+for (const id of ["settings","langSheet"]) $(id).addEventListener("click", e => { if (e.target.id === id) closeSheets(); });
+window.__back = () => { if (!$("settings").hidden || !$("langSheet").hidden){ closeSheets(); return true; } return false; };
+
+function openLangSheet(){ $("langSearch").value = ""; renderLangList(""); openSheet("langSheet"); }
+function renderLangList(q){
+  const el = $("langList"); el.innerHTML = ""; q = q.trim().toLowerCase();
+  LANGS.filter(l => !q || l[1].toLowerCase().includes(q) || l[2].toLowerCase().includes(q) || l[0] === q)
+    .sort((a, b) => a[1].localeCompare(b[1], "ru"))
+    .forEach(l => {
+      const b = document.createElement("button"); if (l[0] === S.target) b.className = "on";
+      b.textContent = l[1]; const s = document.createElement("span"); s.textContent = l[0].toUpperCase(); b.append(s);
+      b.onclick = () => setTarget(l[0]); el.append(b);
+    });
+}
+$("langSearch").addEventListener("input", e => renderLangList(e.target.value));
+
+function segInit(id, key, after){
+  const el = $(id);
+  const paint = () => el.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === S[key]));
+  el.querySelectorAll("button").forEach(b => b.onclick = () => { S[key] = b.dataset.v; save(key); paint(); after && after(); });
+  paint();
+}
+function syncClaudeFields(){ $("claudeFields").style.opacity = S.engine === "claude" ? "1" : ".6"; renderEnginePill(); }
+segInit("engineSeg", "engine", syncClaudeFields);
+segInit("modelSeg", "model", renderEnginePill);
+segInit("toneSeg", "tone");
+$("apiKey").value = S.apiKey;
+$("apiKey").addEventListener("input", e => { S.apiKey = e.target.value.trim(); save("apiKey"); renderEnginePill(); });
+$("showKey").onclick = () => { const i = $("apiKey"); const show = i.type === "password"; i.type = show ? "text" : "password"; $("showKey").textContent = show ? "Скрыть" : "Показать"; };
+$("autoTr").checked = S.auto;
+$("autoTr").onchange = e => { S.auto = e.target.checked; save("auto"); };
+$("settingsBtn").onclick = () => openSheet("settings");
+$("closeSettings").onclick = closeSheets;
+$("enginePill").onclick = () => {
+  if (S.engine === "google" && !S.apiKey){ openSheet("settings"); return; }
+  S.engine = S.engine === "google" ? "claude" : "google"; save("engine"); segInit("engineSeg", "engine", syncClaudeFields); syncClaudeFields();
+  if (native) native.toast(S.engine === "claude" ? "Движок: Claude" : "Движок: Google");
+};
+
+/* input */
+function saveDraft(){ S.draft = src.value.slice(0, 5000); save("draft"); }
+src.addEventListener("input", () => {
+  updCount(); autosize(); saveDraft();
+  clearTimeout(debounce);
+  if (!src.value.trim()){ run(); return; }
+  if (S.auto && S.engine === "google") debounce = setTimeout(run, 650);
+});
+$("goBtn").onclick = () => { src.blur(); run(); };
+$("clearBtn").onclick = () => { src.value = ""; updCount(); autosize(); saveDraft(); seq++; run(); $("notes").hidden = true; src.focus(); };
+$("pasteBtn").onclick = async () => {
+  let t = "";
+  if (native) t = native.paste();
+  else { try{ t = await navigator.clipboard.readText(); }catch(e){} }
+  if (t){ src.value = t; updCount(); autosize(); saveDraft(); run(); }
+  else if (native) native.toast("Буфер обмена пуст");
+};
+$("copyBtn").onclick = () => { if (!last) return; native ? native.copy(last.out) : navigator.clipboard && navigator.clipboard.writeText(last.out).catch(() => {}); };
+$("shareBtn").onclick = () => { if (last && native) native.share(last.out); };
+$("speakBtn").onclick = () => {
+  if (!last || !native) return;
+  const r = native.speak(last.out, last.to === "zh" ? "zh-CN" : last.to);
+  if (r === 0) native.toast("Голос для этого языка не установлен в системе");
+  else if (r === -1) native.toast("Синтез речи недоступен");
+};
+$("backBtn").onclick = () => { if (!last) return; src.value = last.out; updCount(); autosize(); saveDraft(); run(); };
+$("explainBtn").onclick = explain;
+$("clearHist").onclick = () => { S.history = []; save("history"); renderHistory(); };
+
+/* text shared from other apps / text-selection menu */
+window.__incoming = text => { closeSheets(); src.value = text; updCount(); autosize(); saveDraft(); run(); };
+
+/* init */
+renderLangs(); renderEnginePill(); syncClaudeFields(); renderHistory();
+if (S.draft){ src.value = S.draft; updCount(); autosize(); }
+</script>
+</body>
+</html>

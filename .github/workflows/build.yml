@@ -1,0 +1,57 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # нужно, чтобы создавать релизы
+
+concurrency:
+  group: build-apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Без cache: — ничего не пишем в хранилище Actions
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build release APK
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace assembleRelease
+
+      - name: Publish to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v1.0.${{ github.run_number }}"
+          APK="Perevodchik-${TAG}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$APK"
+          gh release create "$TAG" "$APK" \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "Переводчик ${TAG}" \
+            --notes "Сборка из коммита ${{ github.sha }}. Скачайте ${APK} и установите на телефон." \
+            --latest
+
+      # Оставляем только 5 последних релизов, чтобы список не разрастался
+      - name: Remove old releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --repo "${{ github.repository }}" --limit 100 --json tagName,createdAt \
+            --jq 'sort_by(.createdAt) | reverse | .[5:] | .[].tagName' |
+          while read -r t; do
+            [ -n "$t" ] && gh release delete "$t" --repo "${{ github.repository }}" --yes --cleanup-tag || true
+          done
