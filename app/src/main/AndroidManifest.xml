@@ -13,6 +13,9 @@
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
     </queries>
 
     <application
@@ -42,6 +45,13 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
 
+            <!-- "Поделиться" картинкой → перевод с фото -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+
             <!-- Пункт "Переводчик" в меню выделения текста в любом приложении -->
             <intent-filter>
                 <action android:name="android.intent.action.PROCESS_TEXT" />
@@ -49,5 +59,20 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- заранее скачать модели распознавания текста -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="ocr,ocr_chinese,ocr_japanese,ocr_korean,ocr_devanagari" />
     </application>
 </manifest>

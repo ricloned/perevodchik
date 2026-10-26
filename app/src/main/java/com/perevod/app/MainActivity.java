@@ -11,6 +11,22 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
+import android.graphics.Rect;
+import android.media.ExifInterface;
+import android.util.Base64;
+import androidx.core.content.FileProvider;
+import com.google.mlkit.vision.common.InputImage;
+import com.google.mlkit.vision.text.Text;
+import com.google.mlkit.vision.text.TextRecognition;
+import com.google.mlkit.vision.text.TextRecognizer;
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
+import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions;
+import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions;
+import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions;
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -47,6 +63,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -73,6 +90,9 @@ public class MainActivity extends Activity {
 
     private static final String ACTION_INSTALL_STATUS = "com.perevod.app.INSTALL_STATUS";
     private static final int REQ_MIC = 7;
+    private static final int REQ_GALLERY = 11;
+    private static final int REQ_CAMERA = 12;
+    private static final int MAX_SIDE = 1600;
 
     private WebView web;
     private boolean pageReady = false;
@@ -98,6 +118,10 @@ public class MainActivity extends Activity {
     private LanguageIdentifier langId;
     private volatile boolean downloading = false;
 
+    // photo translation
+    private Uri pendingPhoto = null;
+    private Uri cameraUri = null;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -116,6 +140,7 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 pageReady = true;
                 flushPending();
+                if (pendingPhoto != null) { Uri u = pendingPhoto; pendingPhoto = null; processPhoto(u); }
             }
 
             @Override
@@ -147,6 +172,13 @@ public class MainActivity extends Activity {
         if (intent == null) return;
         if (ACTION_INSTALL_STATUS.equals(intent.getAction())) {
             handleInstallStatus(intent);
+            return;
+        }
+        if (Intent.ACTION_SEND.equals(intent.getAction()) && intent.getType() != null && intent.getType().startsWith("image/")) {
+            Uri u = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+            if (u != null) {
+                if (pageReady) processPhoto(u); else pendingPhoto = u;
+            }
             return;
         }
         CharSequence t = null;
@@ -498,6 +530,189 @@ public class MainActivity extends Activity {
             }
             updateEvent("error", "Установка не удалась: " + (msg == null ? status : msg));
         }
+    }
+
+    /* ================= Photo translation (OCR on device) ================= */
+
+    private void photoEvent(String type, String data) {
+        js("window.__photo && window.__photo(" + JSONObject.quote(type) + "," + JSONObject.quote(data == null ? "" : data) + ")");
+    }
+
+    private void pickPhoto(String source) {
+        try {
+            if ("camera".equals(source)) {
+                File dir = new File(getCacheDir(), "photos");
+                if (!dir.exists() && !dir.mkdirs()) throw new Exception("нет доступа к памяти");
+                File f = new File(dir, "camera.jpg");
+                cameraUri = FileProvider.getUriForFile(this, getPackageName() + ".files", f);
+                Intent i = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+                i.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, cameraUri);
+                i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                startActivityForResult(i, REQ_CAMERA);
+            } else {
+                Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+                i.setType("image/*");
+                i.addCategory(Intent.CATEGORY_OPENABLE);
+                startActivityForResult(Intent.createChooser(i, "Выберите фото"), REQ_GALLERY);
+            }
+        } catch (Exception e) {
+            photoEvent("error", "Не удалось открыть " + ("camera".equals(source) ? "камеру" : "галерею") + ": " + e.getMessage());
+        }
+    }
+
+    @Override
+    @SuppressWarnings("deprecation")
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != RESULT_OK) return;
+        if (requestCode == REQ_GALLERY && data != null && data.getData() != null) processPhoto(data.getData());
+        else if (requestCode == REQ_CAMERA && cameraUri != null) processPhoto(cameraUri);
+    }
+
+    private Bitmap loadBitmap(Uri uri) throws Exception {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        try (InputStream in = getContentResolver().openInputStream(uri)) { BitmapFactory.decodeStream(in, null, bounds); }
+        int max = Math.max(bounds.outWidth, bounds.outHeight);
+        if (max <= 0) throw new Exception("не удалось открыть картинку");
+        int sample = 1;
+        while (max / (sample * 2) >= MAX_SIDE) sample *= 2;
+        BitmapFactory.Options o = new BitmapFactory.Options();
+        o.inSampleSize = sample;
+        Bitmap bm;
+        try (InputStream in = getContentResolver().openInputStream(uri)) { bm = BitmapFactory.decodeStream(in, null, o); }
+        if (bm == null) throw new Exception("не удалось прочитать картинку");
+        int rotation = 0;
+        try (InputStream in = getContentResolver().openInputStream(uri)) {
+            int or = new ExifInterface(in).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+            if (or == ExifInterface.ORIENTATION_ROTATE_90) rotation = 90;
+            else if (or == ExifInterface.ORIENTATION_ROTATE_180) rotation = 180;
+            else if (or == ExifInterface.ORIENTATION_ROTATE_270) rotation = 270;
+        } catch (Exception ignored) { }
+        float scale = Math.min(1f, (float) MAX_SIDE / Math.max(bm.getWidth(), bm.getHeight()));
+        if (scale < 1f || rotation != 0) {
+            Matrix m = new Matrix();
+            m.postScale(scale, scale);
+            m.postRotate(rotation);
+            Bitmap r = Bitmap.createBitmap(bm, 0, 0, bm.getWidth(), bm.getHeight(), m, true);
+            if (r != bm) bm.recycle();
+            bm = r;
+        }
+        return bm;
+    }
+
+    private static int letters(Text t) {
+        int n = 0;
+        String s = t.getText();
+        for (int i = 0; i < s.length(); i++) if (Character.isLetterOrDigit(s.charAt(i))) n++;
+        return n;
+    }
+
+    private static boolean isCjk(char c) {
+        Character.UnicodeScript sc = Character.UnicodeScript.of(c);
+        return sc == Character.UnicodeScript.HAN || sc == Character.UnicodeScript.HIRAGANA
+                || sc == Character.UnicodeScript.KATAKANA || sc == Character.UnicodeScript.HANGUL;
+    }
+
+    /** Joins the lines of a block into one sentence-friendly string. */
+    private static String joinLines(Text.TextBlock b) {
+        StringBuilder sb = new StringBuilder();
+        for (Text.Line l : b.getLines()) {
+            String s = l.getText().trim();
+            if (s.isEmpty()) continue;
+            if (sb.length() > 0) {
+                char last = sb.charAt(sb.length() - 1);
+                if (last == '-' && sb.length() > 1 && Character.isLetter(sb.charAt(sb.length() - 2))) {
+                    sb.setLength(sb.length() - 1);           // hyphenated word break
+                } else if (!(isCjk(last) && isCjk(s.charAt(0)))) {
+                    sb.append(' ');
+                }
+            }
+            sb.append(s);
+        }
+        return sb.toString();
+    }
+
+    /** Average color around the box edge — the "paper" behind the text. */
+    private static int edgeColor(Bitmap bm, Rect r) {
+        int w = bm.getWidth(), h = bm.getHeight();
+        int l = Math.max(0, r.left - 3), t = Math.max(0, r.top - 3);
+        int rr = Math.min(w - 1, r.right + 3), bb = Math.min(h - 1, r.bottom + 3);
+        long sr = 0, sg = 0, sbl = 0, n = 0;
+        int stepX = Math.max(1, (rr - l) / 40), stepY = Math.max(1, (bb - t) / 20);
+        for (int x = l; x <= rr; x += stepX) {
+            int c1 = bm.getPixel(x, t), c2 = bm.getPixel(x, bb);
+            sr += ((c1 >> 16) & 255) + ((c2 >> 16) & 255); sg += ((c1 >> 8) & 255) + ((c2 >> 8) & 255); sbl += (c1 & 255) + (c2 & 255); n += 2;
+        }
+        for (int y = t; y <= bb; y += stepY) {
+            int c1 = bm.getPixel(l, y), c2 = bm.getPixel(rr, y);
+            sr += ((c1 >> 16) & 255) + ((c2 >> 16) & 255); sg += ((c1 >> 8) & 255) + ((c2 >> 8) & 255); sbl += (c1 & 255) + (c2 & 255); n += 2;
+        }
+        if (n == 0) return 0xFFFFFF;
+        return (int) ((sr / n) << 16 | (sg / n) << 8 | (sbl / n));
+    }
+
+    private void processPhoto(Uri uri) {
+        photoEvent("loading", "");
+        pool.execute(() -> {
+            Bitmap bm = null;
+            try {
+                bm = loadBitmap(uri);
+                InputImage img = InputImage.fromBitmap(bm, 0);
+                TextRecognizer[] recognizers = {
+                        TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS),
+                        TextRecognition.getClient(new ChineseTextRecognizerOptions.Builder().build()),
+                        TextRecognition.getClient(new JapaneseTextRecognizerOptions.Builder().build()),
+                        TextRecognition.getClient(new KoreanTextRecognizerOptions.Builder().build()),
+                        TextRecognition.getClient(new DevanagariTextRecognizerOptions.Builder().build())
+                };
+                Text best = null;
+                int bestScore = 0;
+                String lastErr = null;
+                for (TextRecognizer r : recognizers) {
+                    try {
+                        Text t = Tasks.await(r.process(img), 60, TimeUnit.SECONDS);
+                        int s = letters(t);
+                        if (s > bestScore) { best = t; bestScore = s; }
+                    } catch (Exception e) {
+                        lastErr = errMsg(e);
+                    } finally {
+                        r.close();
+                    }
+                }
+                if (best == null) {
+                    if (lastErr != null && bestScore == 0 && lastErr.toLowerCase(Locale.ROOT).contains("download")) {
+                        throw new Exception("Сервисы Google ещё скачивают модуль распознавания. Подождите минуту с включённым интернетом и попробуйте снова.");
+                    }
+                    throw new Exception("На фото не найден текст.");
+                }
+                JSONArray blocks = new JSONArray();
+                for (Text.TextBlock b : best.getTextBlocks()) {
+                    Rect r = b.getBoundingBox();
+                    String txt = joinLines(b);
+                    if (r == null || txt.trim().isEmpty()) continue;
+                    int bg = edgeColor(bm, r);
+                    int lum = (int) (0.299 * ((bg >> 16) & 255) + 0.587 * ((bg >> 8) & 255) + 0.114 * (bg & 255));
+                    blocks.put(new JSONObject()
+                            .put("t", txt)
+                            .put("x", r.left).put("y", r.top).put("w", r.width()).put("h", r.height())
+                            .put("n", Math.max(1, b.getLines().size()))
+                            .put("bg", String.format("#%06X", bg & 0xFFFFFF))
+                            .put("fg", lum < 140 ? "#FFFFFF" : "#1C1B22"));
+                }
+                ByteArrayOutputStream jpg = new ByteArrayOutputStream();
+                bm.compress(Bitmap.CompressFormat.JPEG, 85, jpg);
+                JSONObject out = new JSONObject()
+                        .put("img", "data:image/jpeg;base64," + Base64.encodeToString(jpg.toByteArray(), Base64.NO_WRAP))
+                        .put("w", bm.getWidth()).put("h", bm.getHeight())
+                        .put("blocks", blocks);
+                photoEvent("result", out.toString());
+            } catch (Exception e) {
+                photoEvent("error", errMsg(e));
+            } finally {
+                if (bm != null) bm.recycle();
+            }
+        });
     }
 
     /* ================= Network ================= */
@@ -854,6 +1069,12 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void offlineTranslate(String id, String text, String target) {
             MainActivity.this.offlineTranslate(id, text, target);
+        }
+
+        /* photo: events in window.__photo(type, data): loading | result | error */
+        @JavascriptInterface
+        public void pickPhoto(final String source) {
+            ui.post(() -> MainActivity.this.pickPhoto(source));
         }
 
         @JavascriptInterface

@@ -49,4 +49,11 @@ dependencies {
     // офлайн-перевод на устройстве и офлайн-определение языка
     implementation 'com.google.mlkit:translate:17.0.3'
     implementation 'com.google.mlkit:language-id:17.0.6'
+    // распознавание текста на фото (модели ставятся через сервисы Google, APK остаётся лёгким)
+    implementation 'com.google.android.gms:play-services-mlkit-text-recognition:19.0.1'
+    implementation 'com.google.android.gms:play-services-mlkit-text-recognition-chinese:16.0.1'
+    implementation 'com.google.android.gms:play-services-mlkit-text-recognition-japanese:16.0.1'
+    implementation 'com.google.android.gms:play-services-mlkit-text-recognition-korean:16.0.1'
+    implementation 'com.google.android.gms:play-services-mlkit-text-recognition-devanagari:16.0.1'
+    implementation 'androidx.core:core:1.13.1'
 }
