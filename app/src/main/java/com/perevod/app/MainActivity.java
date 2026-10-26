@@ -715,6 +715,55 @@ public class MainActivity extends Activity {
                 .put("fg", lum < 140 ? "#FFFFFF" : "#1C1B22"));
     }
 
+    private static final class Piece {
+        final String text; final Rect r; final int lines; final double score; final double rank;
+        Piece(String text, Rect r, int lines, double score, int letters) {
+            this.text = text; this.r = r; this.lines = lines; this.score = score;
+            double quality = letters == 0 ? 0 : score / letters;          // 0.6 … 3.0: how "native" the reading is
+            this.rank = quality * (1 + 0.1 * Math.log1p(letters));
+        }
+    }
+
+    /** How well a reading fits the recognizer that produced it. Own-script characters weigh 3×. */
+    private static double pieceScore(int rec, String s) {
+        double sc = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (!Character.isLetterOrDigit(ch)) continue;
+            Character.UnicodeScript us = Character.UnicodeScript.of(ch);
+            boolean own;
+            switch (rec) {
+                case 1: own = us == Character.UnicodeScript.HAN; break;
+                case 2: own = us == Character.UnicodeScript.HIRAGANA || us == Character.UnicodeScript.KATAKANA; break;
+                case 3: own = us == Character.UnicodeScript.HANGUL; break;
+                case 4: own = us == Character.UnicodeScript.DEVANAGARI; break;
+                default: own = us == Character.UnicodeScript.LATIN || Character.isDigit(ch);
+            }
+            if (rec == 2 && us == Character.UnicodeScript.HAN) sc += 1.2;      // kanji: fine, but Chinese reads them too
+            else if (own) sc += rec == 0 ? 1.0 : 3.0;
+            else sc += rec == 0 ? 0.6 : 0.8;                                     // Latin/digits read by a CJK recognizer
+        }
+        return sc;
+    }
+
+    private static void addPiece(List<Piece> out, int rec, String txt, Rect r, int lines) {
+        if (txt == null || r == null) return;
+        txt = txt.trim();
+        if (txt.isEmpty() || r.width() < 2 || r.height() < 2) return;
+        int letters = 0;
+        for (int i = 0; i < txt.length(); i++) if (Character.isLetterOrDigit(txt.charAt(i))) letters++;
+        out.add(new Piece(txt, new Rect(r), lines, pieceScore(rec, txt), letters));
+    }
+
+    /** Intersection area divided by the smaller rectangle's area. */
+    private static double overlap(Rect a, Rect b) {
+        int w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        int h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        if (w <= 0 || h <= 0) return 0;
+        double small = Math.min((double) a.width() * a.height(), (double) b.width() * b.height());
+        return small <= 0 ? 0 : (double) w * h / small;
+    }
+
     private void processPhoto(Uri uri) {
         photoEvent("loading", "");
         pool.execute(() -> {
@@ -729,8 +778,7 @@ public class MainActivity extends Activity {
                         TextRecognition.getClient(new KoreanTextRecognizerOptions.Builder().build()),
                         TextRecognition.getClient(new DevanagariTextRecognizerOptions.Builder().build())
                 };
-                // Run every recognizer, then pick by the script it specialises in.
-                // (The Latin one turns CJK into junk letters, so "most letters" is a bad rule.)
+                // Run every recognizer (models are bundled in the APK).
                 Text[] res = new Text[recognizers.length];
                 String lastErr = null;
                 for (int k = 0; k < recognizers.length; k++) {
@@ -742,38 +790,42 @@ public class MainActivity extends Activity {
                         recognizers[k].close();
                     }
                 }
-                double[] score = new double[5];
-                if (res[1] != null) score[1] = scriptCounts(res[1])[0];                                   // Chinese: Han
-                if (res[2] != null) { int[] c = scriptCounts(res[2]); score[2] = c[1] * 2 + c[0] * 0.5; }  // Japanese: kana
-                if (res[3] != null) score[3] = scriptCounts(res[3])[2];                                   // Korean: Hangul
-                if (res[4] != null) score[4] = scriptCounts(res[4])[3];                                   // Devanagari
-                int pick = 0;
-                double bestScript = 2;   // need at least 3 characters of a script to prefer its recognizer
-                for (int k = 1; k < 5; k++) if (score[k] > bestScript) { bestScript = score[k]; pick = k; }
-                Text best = res[pick] != null ? res[pick] : null;
-                if (best == null) for (Text t : res) if (t != null) { best = t; break; }
-                if (best == null || letters(best) == 0) {
-                    if (best == null && lastErr != null && lastErr.toLowerCase(Locale.ROOT).contains("download")) {
-                        throw new Exception("Сервисы Google ещё скачивают модуль распознавания. Подождите минуту с включённым интернетом и попробуйте снова.");
+                // Merge: every recognizer proposes text pieces; for each spot on the photo keep the
+                // reading that best matches the recognizer's own script (Han for Chinese, Latin for Latin…).
+                List<Piece> cands = new ArrayList<>();
+                for (int k = 0; k < res.length; k++) {
+                    if (res[k] == null) continue;
+                    for (Text.TextBlock b : res[k].getTextBlocks()) {
+                        List<List<Object[]>> lines = new ArrayList<>();
+                        boolean multiSeg = false;
+                        for (Text.Line l : b.getLines()) {
+                            List<Object[]> segs = splitLine(l);
+                            if (segs.size() > 1) multiSeg = true;
+                            lines.add(segs);
+                        }
+                        if (lines.size() > 1 && !multiSeg && b.getBoundingBox() != null) {
+                            addPiece(cands, k, joinLines(b), b.getBoundingBox(), b.getLines().size());   // paragraph
+                        } else {
+                            for (List<Object[]> segs : lines) for (Object[] sg : segs) addPiece(cands, k, (String) sg[0], (Rect) sg[1], 1);
+                        }
+                    }
+                }
+                if (cands.isEmpty()) {
+                    if (lastErr != null && lastErr.toLowerCase(Locale.ROOT).contains("download")) {
+                        throw new Exception("Модуль распознавания ещё не готов. Попробуйте снова через минуту.");
                     }
                     throw new Exception("На фото не найден текст.");
                 }
-                JSONArray blocks = new JSONArray();
-                for (Text.TextBlock b : best.getTextBlocks()) {
-                    // split each line into separate pieces where there is a wide gap (UI labels, table cells)
-                    List<List<Object[]>> lines = new ArrayList<>();
-                    boolean multiSeg = false;
-                    for (Text.Line l : b.getLines()) {
-                        List<Object[]> segs = splitLine(l);
-                        if (segs.size() > 1) multiSeg = true;
-                        lines.add(segs);
-                    }
-                    if (lines.size() > 1 && !multiSeg && b.getBoundingBox() != null) {
-                        putItem(blocks, bm, joinLines(b), b.getBoundingBox(), b.getLines().size());   // a paragraph
-                    } else {
-                        for (List<Object[]> segs : lines) for (Object[] sg : segs) putItem(blocks, bm, (String) sg[0], (Rect) sg[1], 1);
-                    }
+                cands.sort((a, b2) -> Double.compare(b2.rank, a.rank));
+                List<Piece> kept = new ArrayList<>();
+                for (Piece c : cands) {
+                    boolean clash = false;
+                    for (Piece k2 : kept) if (overlap(c.r, k2.r) > 0.35) { clash = true; break; }
+                    if (!clash) kept.add(c);
                 }
+                kept.sort((a, b2) -> a.r.top != b2.r.top ? a.r.top - b2.r.top : a.r.left - b2.r.left);
+                JSONArray blocks = new JSONArray();
+                for (Piece c : kept) putItem(blocks, bm, c.text, c.r, c.lines);
                 ByteArrayOutputStream jpg = new ByteArrayOutputStream();
                 bm.compress(Bitmap.CompressFormat.JPEG, 85, jpg);
                 JSONObject out = new JSONObject()

@@ -872,7 +872,27 @@ const isCyr = s => { const l = s.match(/\p{L}/gu) || []; return l.length && l.fi
 /* technical tokens that must stay as they are: IPs, MACs, URLs, numbers, units */
 const isTech = s => /^[\s\d.,:;/\\\-+%#()\[\]_=~|@×xX*]+$/.test(s) || /^(https?:\/\/|www\.)\S+$/i.test(s.trim())
   || /^[\d\s.,]+\s?(kb|mb|gb|kb\/s|mb\/s|mbps|kbps|ms|%|°c|hz|ghz|mhz)$/i.test(s.trim());
-function skipBlock(t){ return !hasLetters(t) || isTech(t) || isCyr(t); }
+/* A word that is a name/code rather than language: DDNS, QoS, DHCP, KB/s, Magic6-Pro, HUAWEI_MatePad-a12d, 62:9C:3C… */
+function isCodeWord(w){
+  const letters = (w.match(/\p{L}/gu) || []);
+  if (!letters.length) return true;
+  if (/\d/.test(w) || /[_:@#]/.test(w)) return true;                                  // has digits / code symbols
+  const latin = letters.filter(c => /\p{Script=Latin}/u.test(c));
+  if (latin.length === letters.length){
+    const upper = latin.filter(c => c === c.toUpperCase() && c !== c.toLowerCase()).length;
+    if (latin.length <= 6 && upper / latin.length >= 0.5) return true;                  // acronyms: DDNS, QoS, IP, Wi-Fi
+    if (/^(kb|mb|gb|tb|kbps|mbps|gbps|ms|hz|khz|mhz|ghz)(\/s)?$/i.test(w.replace(/[^\p{L}/]/gu, ""))) return true;
+  }
+  return false;
+}
+/* Does this piece contain real words in a language other than Russian? */
+function skipBlock(t){
+  if (!hasLetters(t) || isTech(t) || isCyr(t)) return true;
+  if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Devanagari}]/u.test(t)) return false;
+  const words = t.split(/\s+/).filter(Boolean);
+  const real = words.filter(w => !isCodeWord(w));
+  return real.join("").replace(/[^\p{L}]/gu, "").length < 3;                              // nothing left worth translating
+}
 
 async function photoTranslateGoogle(blocks){
   const langs = new Set();

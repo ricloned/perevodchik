@@ -70,9 +70,5 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- заранее скачать модели распознавания текста -->
-        <meta-data
-            android:name="com.google.mlkit.vision.DEPENDENCIES"
-            android:value="ocr,ocr_chinese,ocr_japanese,ocr_korean,ocr_devanagari" />
     </application>
 </manifest>
