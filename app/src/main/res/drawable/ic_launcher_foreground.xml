@@ -3,12 +3,12 @@
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
     <!-- back bubble -->
-    <path android:fillColor="#9AA6F5"
+    <path android:fillColor="#FBD9C9"
         android:pathData="M48,34h22a6,6 0,0 1,6 6v16a6,6 0,0 1,-6 6h-2v7l-8,-7h-12a6,6 0,0 1,-6 -6v-16a6,6 0,0 1,6 -6z"/>
     <!-- front bubble -->
     <path android:fillColor="#FFFFFF"
         android:pathData="M38,44h22a6,6 0,0 1,6 6v16a6,6 0,0 1,-6 6h-12l-8,7v-7h-2a6,6 0,0 1,-6 -6v-16a6,6 0,0 1,6 -6z"/>
     <!-- "Я" on front bubble -->
-    <path android:strokeColor="#3346C7" android:strokeWidth="2.6" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000"
+    <path android:strokeColor="#7C6FD0" android:strokeWidth="2.6" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000"
         android:pathData="M53,66v-16h-5a4,4 0,0 0,0 8h5M48,58l-5,8"/>
 </vector>

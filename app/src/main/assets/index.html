@@ -6,20 +6,24 @@
 <title>Переводчик</title>
 <style>
 :root{
-  --bg:#eef0f5; --surface:#ffffff; --surface-2:#f6f7fb; --line:#dfe2ec;
-  --fg:#161a2b; --muted:#5d6380; --accent:#3346c7; --accent-fg:#ffffff; --accent-soft:#e3e7fb;
-  --danger:#b3261e; --scrim:rgba(15,18,32,.45);
+  /* soft pastel: lavender mist + peach, violet accent */
+  --bg:#f4f1f8; --bg-2:#fbf1ec; --surface:#fffcfa; --surface-2:#f8f3fc; --line:#e9e2f0;
+  --fg:#2e2a3a; --muted:#867e97; --accent:#7c6fd0; --accent-fg:#ffffff; --accent-soft:#ece8fb;
+  --peach:#c9805f; --peach-soft:#fdebe2; --mint:#4f8f7a; --mint-soft:#e1f2ea;
+  --danger:#c0504d; --scrim:rgba(46,42,58,.35); --shadow:0 2px 14px rgba(124,111,208,.10);
   --f-body:Roboto, "Noto Sans", system-ui, sans-serif;
   --f-mono:"Roboto Mono", "Noto Sans Mono", ui-monospace, monospace;
 }
 @media (prefers-color-scheme: dark){:root{
-  --bg:#0f1220; --surface:#171b2e; --surface-2:#1d2238; --line:#2c3250;
-  --fg:#e8eaf4; --muted:#9aa0bd; --accent:#8b9bff; --accent-fg:#0f1220; --accent-soft:#252c52;
-  --danger:#ffb4ab; --scrim:rgba(0,0,0,.6); color-scheme:dark }}
+  --bg:#1b1922; --bg-2:#231d25; --surface:#25222f; --surface-2:#2a2637; --line:#383349;
+  --fg:#ece8f4; --muted:#a69fb8; --accent:#b4a9f5; --accent-fg:#1b1922; --accent-soft:#363052;
+  --peach:#eeb39a; --peach-soft:#3b2d2b; --mint:#93d3bd; --mint-soft:#243731;
+  --danger:#f2a8a3; --scrim:rgba(0,0,0,.55); --shadow:0 2px 14px rgba(0,0,0,.25); color-scheme:dark }}
 
+[hidden]{display:none!important}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;margin:0}
-body{background:var(--bg);color:var(--fg);font:16px/1.5 var(--f-body);display:flex;flex-direction:column;overflow:hidden}
+body{background:linear-gradient(180deg,var(--bg-2) 0,var(--bg) 260px) var(--bg);color:var(--fg);font:16px/1.5 var(--f-body);display:flex;flex-direction:column;overflow:hidden}
 
 /* top bar */
 .top{display:flex;align-items:center;justify-content:space-between;padding:10px 8px 6px 16px;flex:none}
@@ -32,10 +36,11 @@ body{background:var(--bg);color:var(--fg);font:16px/1.5 var(--f-body);display:fl
 
 /* scroll area */
 main{flex:1;overflow-y:auto;padding:4px 12px 12px;display:flex;flex-direction:column;gap:10px;-webkit-overflow-scrolling:touch}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:18px;display:flex;flex-direction:column}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:22px;display:flex;flex-direction:column;box-shadow:var(--shadow)}
 .card.result{background:var(--surface-2)}
 .card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 6px 0 14px;min-height:44px}
-.chip{font:500 13px/1 var(--f-body);padding:6px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.chip{font:500 13px/1 var(--f-body);padding:7px 11px;border-radius:999px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+#detChip:not(.idle){background:var(--peach-soft);color:var(--peach)}
 .chip.idle{background:transparent;border:1px dashed var(--line);color:var(--muted)}
 textarea{font:400 19px/1.5 var(--f-body);color:var(--fg);background:transparent;border:0;outline:none;resize:none;padding:6px 14px 8px;width:100%;min-height:120px;max-height:45vh}
 textarea::placeholder{color:var(--muted)}
@@ -61,21 +66,21 @@ textarea::placeholder{color:var(--muted)}
 .empty{color:var(--muted);font-size:14px;padding:12px 14px}
 
 /* bottom bar */
-.bottom{flex:none;background:var(--bg);border-top:1px solid var(--line);padding:8px 0 10px;display:flex;flex-direction:column;gap:8px}
+.bottom{flex:none;background:var(--bg);border-top:1px solid var(--line);border-radius:22px 22px 0 0;box-shadow:0 -4px 18px rgba(124,111,208,.08);padding:8px 0 10px;display:flex;flex-direction:column;gap:8px}
 .langs{display:flex;gap:6px;overflow-x:auto;padding:0 12px;scrollbar-width:none}
 .langs::-webkit-scrollbar{display:none}
 .lang{flex:none;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:8px 14px;font:500 14px/1 var(--f-body)}
-.lang.on{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.lang.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600}
 .go-row{display:flex;gap:8px;padding:0 12px;align-items:center}
-.go{flex:1;height:50px;border-radius:14px;border:0;background:var(--accent);color:var(--accent-fg);font:600 16px var(--f-body)}
+.go{flex:1;height:52px;border-radius:16px;border:0;background:var(--accent);color:var(--accent-fg);font:600 16px var(--f-body);box-shadow:0 4px 14px rgba(124,111,208,.30)}
 .go:active{filter:brightness(1.1)}
 .go:disabled{opacity:.6}
-.engine-pill{flex:none;height:50px;padding:0 14px;border-radius:14px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font:500 13px/1.15 var(--f-body);text-align:left}
-.engine-pill small{display:block;color:var(--muted);font-size:11px}
+.engine-pill{flex:none;max-width:42%;height:52px;padding:0 14px;border-radius:16px;border:1px solid var(--line);background:var(--mint-soft);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--fg);font:500 13px/1.15 var(--f-body);text-align:left}
+.engine-pill small{display:block;color:var(--mint);font-size:11px;overflow:hidden;text-overflow:ellipsis}
 
 /* sheets */
 .scrim{position:fixed;inset:0;background:var(--scrim);display:flex;align-items:flex-end;z-index:10}
-.sheet{background:var(--surface);width:100%;max-height:88vh;overflow-y:auto;border-radius:22px 22px 0 0;padding:8px 16px 20px;display:flex;flex-direction:column;gap:16px}
+.sheet{background:var(--surface);box-shadow:0 -6px 30px rgba(0,0,0,.12);width:100%;max-height:88vh;overflow-y:auto;border-radius:22px 22px 0 0;padding:8px 16px 20px;display:flex;flex-direction:column;gap:16px}
 .grab{width:36px;height:4px;border-radius:2px;background:var(--line);margin:4px auto 0}
 .sheet h2{margin:0;font-size:18px;font-weight:600}
 .field{display:flex;flex-direction:column;gap:8px}
@@ -85,8 +90,11 @@ textarea::placeholder{color:var(--muted)}
 .seg button{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:12px;padding:10px 12px;font:500 14px/1.2 var(--f-body);text-align:left;flex:1 1 auto}
 .seg button small{display:block;font-weight:400;font-size:12px;color:var(--muted)}
 .seg button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.status{font-size:13px;margin:0;color:var(--muted)}
+.status.ok{color:var(--mint)}
+.status.bad{color:var(--danger)}
 .seg button.on small{color:var(--accent)}
-input[type=password],input[type=text],input[type=search]{width:100%;font:400 16px var(--f-body);padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);color:var(--fg);outline:none}
+input[type=password],input[type=text],input[type=search],input[type=url]{width:100%;font:400 16px var(--f-body);padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);color:var(--fg);outline:none}
 input:focus{border-color:var(--accent)}
 .row{display:flex;gap:8px;align-items:center}
 .row input{flex:1}
@@ -151,7 +159,7 @@ input:focus{border-color:var(--accent)}
         <button class="icon-btn" id="backBtn" aria-label="Обратный перевод" disabled title="Обратный перевод">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4M3 8l4-4 4 4M17 8v12M21 16l-4 4-4-4"/></svg>
         </button>
-        <button class="icon-btn" id="explainBtn" aria-label="Разбор нюансов" hidden disabled title="Разбор нюансов (Claude)">
+        <button class="icon-btn" id="explainBtn" aria-label="Разбор нюансов" hidden disabled title="Разбор нюансов (свой ИИ)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></svg>
         </button>
       </div>
@@ -181,24 +189,28 @@ input:focus{border-color:var(--accent)}
       <span class="lbl">Движок перевода</span>
       <div class="seg" id="engineSeg">
         <button data-v="google">Google<small>бесплатно, мгновенно</small></button>
-        <button data-v="claude">Claude<small>максимальное качество</small></button>
+        <button data-v="ai">Свой ИИ<small>ваш API и модель</small></button>
       </div>
     </div>
 
-    <div class="field" id="claudeFields">
-      <label for="apiKey">API-ключ Anthropic</label>
+    <div class="field" id="aiFields">
+      <label for="aiUrl">Адрес API</label>
+      <input type="url" id="aiUrl" placeholder="https://ваш-сайт.com/v1" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <label for="apiKey">Ключ</label>
       <div class="row">
-        <input type="password" id="apiKey" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <input type="password" id="apiKey" placeholder="sk-…" autocomplete="off" autocapitalize="off" spellcheck="false">
         <button class="small-btn" id="showKey">Показать</button>
       </div>
-      <p class="hint">Ключ создаётся на console.anthropic.com → API Keys. Хранится только на этом телефоне. Оплата по тарифам API.</p>
-      <span class="lbl">Модель</span>
-      <div class="seg" id="modelSeg">
-        <button data-v="claude-sonnet-5-5">Sonnet 5.5<small>рекомендуется</small></button>
-        <button data-v="claude-opus-5-5">Opus 5.5<small>максимум</small></button>
-        <button data-v="claude-haiku-5-5">Haiku 5.5<small>быстро, дёшево</small></button>
+      <label for="aiModel">Модель</label>
+      <input type="text" id="aiModel" placeholder="например gpt-4o или claude-sonnet-4-5" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <span class="lbl">Формат API</span>
+      <div class="seg" id="formatSeg">
+        <button data-v="openai">OpenAI-совместимый<small>/chat/completions</small></button>
+        <button data-v="anthropic">Anthropic<small>/messages</small></button>
       </div>
-      <span class="lbl">Стиль</span>
+      <p class="hint">Достаточно базового адреса: путь /chat/completions или /messages добавится сам. Всё хранится только на этом телефоне.</p>
+      <div class="row"><button class="small-btn" id="testBtn">Проверить подключение</button><p class="status" id="testStatus"></p></div>
+      <span class="lbl">Стиль перевода</span>
       <div class="seg" id="toneSeg">
         <button data-v="auto">Как в оригинале</button>
         <button data-v="formal">Деловой</button>
@@ -252,13 +264,16 @@ const S = {
   target: prefs.get("target","en"),
   engine: prefs.get("engine","google"),
   apiKey: prefs.get("apiKey",""),
-  model: prefs.get("model","claude-sonnet-5-5"),
+  aiUrl: prefs.get("aiUrl",""),
+  aiModel: prefs.get("aiModel",""),
+  aiFormat: prefs.get("aiFormat","openai"),
   tone: prefs.get("tone","auto"),
   auto: prefs.get("auto", true),
   history: prefs.get("history", []),
   draft: prefs.get("draft", "")
 };
 if (!byCode[S.target]) S.target = "en";
+if (S.engine !== "google" && S.engine !== "ai") S.engine = "google";
 function save(k){ prefs.set(k, S[k]); }
 
 /* ---------- HTTP (native bridge without CORS, fetch fallback in a browser) ---------- */
@@ -308,7 +323,7 @@ function chunks(text, max = 900){
 async function gCall(text, tl){
   const url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=" + encodeURIComponent(tl) + "&dt=t&q=" + encodeURIComponent(text);
   const r = await http("GET", url);
-  if (!r.ok) throw new Error(r.status === 429 ? "Google временно ограничил запросы. Подождите минуту или включите Claude." : "Нет связи с Google (" + (r.status || "сеть") + ").");
+  if (!r.ok) throw new Error(r.status === 429 ? "Google временно ограничил запросы. Подождите минуту или включите свой ИИ." : "Нет связи с Google (" + (r.status || "сеть") + ").");
   const data = JSON.parse(r.text);
   const tr = (data[0] || []).map(s => s && s[0] ? s[0] : "").join("");
   return {text: tr, detected: normCode(data[2])};
@@ -331,8 +346,9 @@ async function translateGoogle(text, onPartial){
   return {from, to, text: joined, name: ""};
 }
 
-/* ---------- Claude engine ---------- */
-function claudePrompt(text){
+/* ---------- Own AI engine (OpenAI-compatible or Anthropic format) ---------- */
+function aiReady(){ return !!(S.aiUrl && S.apiKey && S.aiModel); }
+function aiPrompt(text){
   const t = byCode[S.target];
   const toneLine = S.tone === "formal" ? "Use a formal, polished business register in the output."
     : S.tone === "casual" ? "Use a natural, casual conversational register in the output."
@@ -356,27 +372,49 @@ SOURCE:
 ${text}
 >>>`;
 }
-async function claudeCall(prompt, maxTokens){
-  if (!S.apiKey) throw new Error("Добавьте API-ключ Claude в настройках (шестерёнка вверху).");
-  const r = await http("POST", "https://api.anthropic.com/v1/messages", {
-    "content-type":"application/json", "x-api-key": S.apiKey, "anthropic-version":"2023-06-01",
-    "anthropic-dangerous-direct-browser-access":"true"
-  }, JSON.stringify({model: S.model, max_tokens: maxTokens || 8192, messages:[{role:"user", content: prompt}]}));
+function endpoint(){
+  let u = S.aiUrl.trim().replace(/\/+$/, "");
+  if (!/^https?:\/\//i.test(u)) u = "https://" + u;
+  const tail = S.aiFormat === "anthropic" ? "/messages" : "/chat/completions";
+  if (u.endsWith(tail)) return u;
+  if (/\/v\d+[a-z]*$/i.test(u)) return u + tail;
+  return u + "/v1" + tail;
+}
+async function aiCall(prompt, maxTokens){
+  if (!aiReady()) throw new Error("Заполните адрес API, ключ и модель в настройках (шестерёнка вверху).");
+  const anth = S.aiFormat === "anthropic";
+  const headers = anth
+    ? {"content-type":"application/json", "x-api-key": S.apiKey, "authorization": "Bearer " + S.apiKey, "anthropic-version":"2023-06-01"}
+    : {"content-type":"application/json", "authorization": "Bearer " + S.apiKey};
+  const body = anth
+    ? {model: S.aiModel, max_tokens: maxTokens || 8192, messages:[{role:"user", content: prompt}]}
+    : {model: S.aiModel, messages:[{role:"user", content: prompt}], stream: false};
+  const r = await http("POST", endpoint(), headers, JSON.stringify(body));
   let data = null; try{ data = JSON.parse(r.text); }catch(e){}
   if (!r.ok){
-    const msg = data && data.error && data.error.message ? data.error.message : r.text;
-    if (r.status === 401) throw new Error("Неверный API-ключ. Проверьте его в настройках.");
-    if (r.status === 429) throw new Error("Лимит запросов API. Подождите немного.");
-    if (r.status === 529 || r.status === 503) throw new Error("Claude перегружен. Попробуйте через минуту или переключитесь на Google.");
-    if (r.status === 400 && /credit|balance/i.test(msg)) throw new Error("На балансе API закончились средства (console.anthropic.com → Billing).");
-    if (r.status === 0) throw new Error("Нет связи с сервером Claude.");
-    throw new Error("Ошибка Claude (" + r.status + "): " + msg);
+    let msg = (data && ((data.error && (data.error.message || data.error)) || data.message || data.detail)) || (r.text || "").slice(0, 300);
+    if (typeof msg !== "string") msg = JSON.stringify(msg);
+    if (r.status === 0) throw new Error("Нет связи с сервером API. Проверьте адрес и интернет.");
+    if (r.status === 401 || r.status === 403) throw new Error("Сервер не принял ключ (" + r.status + "). " + msg);
+    if (r.status === 404) throw new Error("Адрес не найден (404). Проверьте адрес API и формат. " + msg);
+    if (r.status === 429) throw new Error("Лимит запросов (429). Подождите немного. " + msg);
+    throw new Error("Ошибка API (" + r.status + "): " + msg);
   }
-  return (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
+  if (!data) throw new Error("Сервер вернул не JSON. Проверьте адрес API: " + (r.text || "").slice(0, 120));
+  let text = "";
+  if (anth) text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
+  else {
+    const ch = data.choices && data.choices[0];
+    const c = ch && (ch.message ? ch.message.content : ch.text);
+    text = Array.isArray(c) ? c.map(x => x.text || "").join("") : (c || "");
+  }
+  text = text.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/^\s*```[a-z]*\n?|\n?```\s*$/g, "");
+  if (!text.trim()) throw new Error("Модель вернула пустой ответ.");
+  return text;
 }
-async function translateClaude(text){
-  const raw = await claudeCall(claudePrompt(text));
-  const m = raw.match(/^\s*@@([a-zA-Z\-]{2,8})>([a-zA-Z\-]{2,8})\|([^\n]*)\n?/);
+async function translateAI(text){
+  const raw = await aiCall(aiPrompt(text));
+  const m = raw.match(/^\s*@@\s*([a-zA-Z\-]{2,8})\s*>\s*([a-zA-Z\-]{2,8})\s*\|([^\n]*)\n?/);
   if (!m) return {from:"?", to:"?", text: raw.trim(), name:""};
   return {from: normCode(m[1]), to: normCode(m[2]), name: m[3].trim(), text: raw.slice(m[0].length).trim()};
 }
@@ -387,10 +425,10 @@ let seq = 0, last = null, debounce = null;
 
 function renderRoute(){ $("route").textContent = "авто → RU · RU → " + S.target.toUpperCase(); }
 function renderEnginePill(){
-  $("enginePill").innerHTML = S.engine === "claude"
-    ? "Claude<small>" + ({"claude-sonnet-5-5":"Sonnet","claude-opus-5-5":"Opus","claude-haiku-5-5":"Haiku"}[S.model] || "") + "</small>"
-    : "Google<small>бесплатно</small>";
-  $("explainBtn").hidden = !S.apiKey;
+  const pill = $("enginePill"); pill.textContent = S.engine === "ai" ? "Свой ИИ" : "Google";
+  const sm = document.createElement("small"); sm.textContent = S.engine === "ai" ? (S.aiModel || "не настроен") : "бесплатно";
+  pill.append(sm);
+  $("explainBtn").hidden = !aiReady();
 }
 function renderLangs(){
   const list = PINNED.includes(S.target) ? PINNED.slice() : [S.target, ...PINNED];
@@ -427,16 +465,16 @@ async function run(){
   const my = ++seq;
   $("goBtn").disabled = true; $("goBtn").textContent = "Перевожу…";
   $("notes").hidden = true;
-  if (S.engine === "claude" || !last){ out.className = "out dim"; out.textContent = "Перевожу…"; }
+  if (S.engine === "ai" || !last){ out.className = "out dim"; out.textContent = "Перевожу…"; }
   const t0 = performance.now();
   try{
-    const r = S.engine === "claude"
-      ? await translateClaude(text)
+    const r = S.engine === "ai"
+      ? await translateAI(text)
       : await translateGoogle(text, p => { if (my === seq) setChips(p); });
     if (my !== seq) return;
     setChips(r);
     out.className = "out"; out.textContent = r.text;
-    $("outMeta").textContent = (S.engine === "claude" ? "Claude · " : "Google · ") + ((performance.now() - t0) / 1000).toFixed(1) + " с";
+    $("outMeta").textContent = (S.engine === "ai" ? (S.aiModel + " · ") : "Google · ") + ((performance.now() - t0) / 1000).toFixed(1) + " с";
     last = {src: text, out: r.text, from: r.from, to: r.to};
     setOutState(true);
     addHistory(last);
@@ -453,7 +491,7 @@ async function explain(){
   if (!last) return;
   $("notes").hidden = false; $("notesText").textContent = "Разбираю…"; $("explainBtn").disabled = true;
   try{
-    const t = await claudeCall(`Ниже исходный текст и его перевод. Кратко, по-русски: 1) отметь 2–5 мест, где перевод неочевиден (идиомы, многозначные слова, вежливость, термины), и почему выбран именно такой вариант; 2) предложи 1–2 альтернативных варианта ключевых фраз с пометкой, когда они лучше. Без вступлений и без markdown, короткими пунктами через «•».
+    const t = await aiCall(`Ниже исходный текст и его перевод. Кратко, по-русски: 1) отметь 2–5 мест, где перевод неочевиден (идиомы, многозначные слова, вежливость, термины), и почему выбран именно такой вариант; 2) предложи 1–2 альтернативных варианта ключевых фраз с пометкой, когда они лучше. Без вступлений и без markdown, короткими пунктами через «•».
 
 ИСХОДНИК:
 ${last.src}
@@ -515,21 +553,29 @@ function segInit(id, key, after){
   el.querySelectorAll("button").forEach(b => b.onclick = () => { S[key] = b.dataset.v; save(key); paint(); after && after(); });
   paint();
 }
-function syncClaudeFields(){ $("claudeFields").style.opacity = S.engine === "claude" ? "1" : ".6"; renderEnginePill(); }
-segInit("engineSeg", "engine", syncClaudeFields);
-segInit("modelSeg", "model", renderEnginePill);
+function syncAiFields(){ $("aiFields").style.opacity = S.engine === "ai" ? "1" : ".6"; renderEnginePill(); }
+segInit("engineSeg", "engine", syncAiFields);
+segInit("formatSeg", "aiFormat");
 segInit("toneSeg", "tone");
-$("apiKey").value = S.apiKey;
-$("apiKey").addEventListener("input", e => { S.apiKey = e.target.value.trim(); save("apiKey"); renderEnginePill(); });
+for (const [id, key] of [["aiUrl","aiUrl"],["apiKey","apiKey"],["aiModel","aiModel"]]){
+  $(id).value = S[key];
+  $(id).addEventListener("input", e => { S[key] = e.target.value.trim(); save(key); renderEnginePill(); $("testStatus").textContent = ""; });
+}
 $("showKey").onclick = () => { const i = $("apiKey"); const show = i.type === "password"; i.type = show ? "text" : "password"; $("showKey").textContent = show ? "Скрыть" : "Показать"; };
+$("testBtn").onclick = async () => {
+  const st = $("testStatus"); st.className = "status"; st.textContent = "Проверяю…"; $("testBtn").disabled = true;
+  try{ const t = await aiCall("Translate to English, reply with the translation only: Привет", 50); st.className = "status ok"; st.textContent = "Работает: " + t.trim().slice(0, 40); }
+  catch(e){ st.className = "status bad"; st.textContent = e.message; }
+  finally{ $("testBtn").disabled = false; }
+};
 $("autoTr").checked = S.auto;
 $("autoTr").onchange = e => { S.auto = e.target.checked; save("auto"); };
 $("settingsBtn").onclick = () => openSheet("settings");
 $("closeSettings").onclick = closeSheets;
 $("enginePill").onclick = () => {
-  if (S.engine === "google" && !S.apiKey){ openSheet("settings"); return; }
-  S.engine = S.engine === "google" ? "claude" : "google"; save("engine"); segInit("engineSeg", "engine", syncClaudeFields); syncClaudeFields();
-  if (native) native.toast(S.engine === "claude" ? "Движок: Claude" : "Движок: Google");
+  if (S.engine === "google" && !aiReady()){ openSheet("settings"); return; }
+  S.engine = S.engine === "google" ? "ai" : "google"; save("engine"); segInit("engineSeg", "engine", syncAiFields); syncAiFields();
+  if (native) native.toast(S.engine === "ai" ? "Движок: " + S.aiModel : "Движок: Google");
 };
 
 /* input */
@@ -565,7 +611,7 @@ $("clearHist").onclick = () => { S.history = []; save("history"); renderHistory(
 window.__incoming = text => { closeSheets(); src.value = text; updCount(); autosize(); saveDraft(); run(); };
 
 /* init */
-renderLangs(); renderEnginePill(); syncClaudeFields(); renderHistory();
+renderLangs(); renderEnginePill(); syncAiFields(); renderHistory();
 if (S.draft){ src.value = S.draft; updCount(); autosize(); }
 </script>
 </body>
