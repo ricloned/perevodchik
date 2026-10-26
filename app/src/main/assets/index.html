@@ -30,7 +30,8 @@
 .v-stage-wrap{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:0 8px}
 .v-stage{position:relative;width:100%;margin:auto 0;touch-action:manipulation}
 .v-stage img{display:block;width:100%;height:auto;border-radius:10px;user-select:none;-webkit-user-select:none}
-.ov{position:absolute;display:flex;align-items:center;justify-content:center;text-align:center;overflow:hidden;line-height:1.12;border-radius:3px;padding:0 1px;transition:opacity .18s;word-break:break-word;font-family:var(--f-body);font-weight:500}
+.ov{position:absolute;display:flex;align-items:center;justify-content:center;text-align:center;overflow:hidden;line-height:1.15;border-radius:3px;padding:0 2px;transition:opacity .18s;font-family:var(--f-body);font-weight:500;}
+.ov span{display:block;max-width:100%;overflow-wrap:anywhere;hyphens:auto}
 .v-stage.orig .ov{opacity:0}
 .v-status{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:24px;color:#d9d4e8;font-size:15px}
 .spinner{width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,.18);border-top-color:#b4a9f5;animation:spin .8s linear infinite;margin:0 auto 12px}
@@ -319,7 +320,7 @@ input:focus{border-color:var(--accent)}
       <button id="pickGallery"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>Галерея</button>
       <button id="pickCamera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8a2 2 0 0 1 2-2h1.5l1.2-1.8A1 1 0 0 1 9.5 4h5a1 1 0 0 1 .8.4L16.5 6H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.5"/></svg>Камера</button>
     </div>
-    <p class="hint">Можно и просто переслать картинку в «Переводчик» через «Поделиться». Распознаётся латиница, китайский, японский, корейский и хинди. Русский текст на фото не распознаётся.</p>
+    <p class="hint">Можно и просто переслать картинку в «Переводчик» через «Поделиться». Всё переводится на русский. Распознаётся латиница, китайский, японский, корейский и хинди; русский текст на фото остаётся как есть.</p>
   </div>
 </div>
 
@@ -335,11 +336,11 @@ input:focus{border-color:var(--accent)}
   <div class="v-stage-wrap">
     <div class="v-stage" id="vStage">
       <img id="vImg" alt="Фото">
-      <div id="vOverlays"></div>
+      <div id="vOverlays" lang="ru"></div>
     </div>
     <div class="v-status" id="vStatus" hidden></div>
   </div>
-  <div class="v-hint" id="vHint" hidden>Нажмите на фото, чтобы увидеть оригинал</div>
+  <div class="v-hint" id="vHint" lang="ru" hidden>Нажмите на фото, чтобы увидеть оригинал</div>
   <div class="v-bar">
     <button id="vToggle" disabled>Оригинал</button>
     <button id="vText" disabled>Как текст</button>
@@ -454,7 +455,7 @@ async function gCall(text, tl){
   if (!r.ok) throw new Error(r.status === 429 ? "Google временно ограничил запросы. Подождите минуту или включите свой ИИ." : "Нет связи с Google (" + (r.status || "сеть") + ").");
   const data = JSON.parse(r.text);
   const tr = (data[0] || []).map(s => s && s[0] ? s[0] : "").join("");
-  return {text: tr, detected: normCode(data[2])};
+  return {text: tr, detected: normCode(data[2]), conf: typeof data[6] === "number" ? data[6] : 1};
 }
 async function translateGoogle(text, onPartial){
   const parts = chunks(text);
@@ -553,7 +554,7 @@ let offHave = new Set();                 // downloaded model codes
 const offSupported = new Set(native && native.offlineSupported ? JSON.parse(native.offlineSupported()) : []);
 window.__offlineResult = (id, ok, payload) => { const w = offWaiting.get(id); if (w){ offWaiting.delete(id); w(ok, payload); } };
 function offlineReady(){ return offSupported.size > 0 && offHave.has("ru"); }
-function translateOffline(text){
+function translateOffline(text, target){
   return new Promise((res, rej) => {
     const id = "o" + (++offId);
     offWaiting.set(id, (ok, payload) => {
@@ -565,7 +566,7 @@ function translateOffline(text){
         rej(new Error("Язык «" + langName(normCode(payload.slice(12))) + "» не поддерживается офлайн. Нужен интернет."));
       } else rej(new Error("Офлайн-перевод: " + payload));
     });
-    native.offlineTranslate(id, text, S.target);
+    native.offlineTranslate(id, text, target || S.target);
   });
 }
 
@@ -864,40 +865,63 @@ async function pool(items, limit, fn){
   await Promise.all(Array.from({length: Math.min(limit, items.length)}, worker));
   return out;
 }
+/* Photos are always translated INTO RUSSIAN, block by block (each block may be another language). */
+const hasLetters = s => (s.match(/\p{L}/gu) || []).length >= 2;
+const same = (a, b) => String(a).replace(/\s+/g, "").toLowerCase() === String(b).replace(/\s+/g, "").toLowerCase();
+const isCyr = s => { const l = s.match(/\p{L}/gu) || []; return l.length && l.filter(c => /\p{Script=Cyrillic}/u.test(c)).length / l.length > 0.6; };
+/* technical tokens that must stay as they are: IPs, MACs, URLs, numbers, units */
+const isTech = s => /^[\s\d.,:;/\\\-+%#()\[\]_=~|@×xX*]+$/.test(s) || /^(https?:\/\/|www\.)\S+$/i.test(s.trim())
+  || /^[\d\s.,]+\s?(kb|mb|gb|kb\/s|mb\/s|mbps|kbps|ms|%|°c|hz|ghz|mhz)$/i.test(s.trim());
+function skipBlock(t){ return !hasLetters(t) || isTech(t) || isCyr(t); }
+
 async function photoTranslateGoogle(blocks){
-  const sample = blocks.map(b => b.t).join("\n").slice(0, 800);
-  const det = await gCall(sample, "ru");
-  const to = det.detected === "ru" ? S.target : "ru";
-  const tr = await pool(blocks, 4, async b => (await gCall(b.t, googleTl(to))).text);
-  return {from: det.detected, to, items: tr};
+  const langs = new Set();
+  const items = await pool(blocks, 4, async b => {
+    if (skipBlock(b.t)) return null;
+    const r = await gCall(b.t, "ru");
+    if (r.detected === "ru" || r.conf < 0.25 || same(r.text, b.t)) return null;   // Russian already, or OCR noise
+    langs.add(r.detected);
+    return r.text;
+  });
+  return {langs: [...langs], items};
 }
 async function photoTranslateAI(blocks){
-  const t = byCode[S.target];
-  const prompt = `You translate text found on a photo. Below is a JSON array of text blocks.
-Detect the dominant language of the blocks. If it is Russian, translate every block into ${t[2]} (code "${t[0]}"); otherwise translate every block into Russian (code "ru").
-Keep each translation short enough to fit where the original was. Keep numbers, prices, names and codes as they are.
-Reply with ONLY JSON: {"from":"<code>","to":"<code>","items":["...", "..."]} — exactly ${blocks.length} items in the same order.
+  const idx = blocks.map((b, i) => skipBlock(b.t) ? -1 : i).filter(i => i >= 0);
+  if (!idx.length) return {langs: [], items: blocks.map(() => null)};
+  const prompt = `You translate text found on a photo (a screenshot, a sign, a menu, a document) INTO RUSSIAN.
+Below is a JSON array of text pieces detected by OCR. Pieces may be in different languages.
+For each piece: translate it into natural, concise Russian that fits where the original was (UI labels stay short, like a localized interface).
+If a piece is already Russian, or is a code, number, address or garbled OCR noise, return it unchanged.
+Reply with ONLY JSON: {"langs":["<source language codes found>"],"items":["...", "..."]} — exactly ${idx.length} items in the same order.
 
-BLOCKS:
-${JSON.stringify(blocks.map(b => b.t))}`;
+PIECES:
+${JSON.stringify(idx.map(i => blocks[i].t))}`;
   const raw = await aiCall(prompt, 8192);
   const s = raw.indexOf("{"), e = raw.lastIndexOf("}");
   const d = JSON.parse(raw.slice(s, e + 1));
-  const items = blocks.map((b, i) => (d.items && typeof d.items[i] === "string") ? d.items[i] : b.t);
-  return {from: normCode(d.from), to: normCode(d.to), items};
+  const items = blocks.map(() => null);
+  idx.forEach((bi, k) => { const v = d.items && d.items[k]; if (typeof v === "string" && !same(v, blocks[bi].t)) items[bi] = v; });
+  return {langs: (d.langs || []).map(normCode).filter(c => c !== "ru"), items};
 }
 async function photoTranslateOffline(blocks){
-  let from = "?", to = "?";
-  const items = await pool(blocks, 2, async b => { const r = await translateOffline(b.t); from = r.from; to = r.to; return r.text; });
-  return {from, to, items};
+  const langs = new Set();
+  const items = await pool(blocks, 2, async b => {
+    if (skipBlock(b.t)) return null;
+    try{
+      const r = await translateOffline(b.t, "ru");
+      if (r.from === "ru" || same(r.text, b.t)) return null;
+      langs.add(r.from); return r.text;
+    }catch(e){ return null; }      // a language that is not downloaded: leave this piece untouched
+  });
+  return {langs: [...langs], items};
 }
 async function translatePhoto(){
   const my = ++photoSeq;
   const blocks = photo.blocks;
   if (!blocks.length){ vStatus("На фото не найден текст."); return; }
   $("vHint").hidden = true;
-  vStatus('<div><div class="spinner"></div>Перевожу ' + blocks.length + ' ' + plural(blocks.length, ["блок","блока","блоков"]) + ' текста…</div>');
-  let r, via = S.engine;
+  vStatus('<div><div class="spinner"></div>Перевожу текст на фото…</div>');
+  let r;
   try{
     try{
       r = S.engine === "offline" ? await photoTranslateOffline(blocks)
@@ -905,7 +929,7 @@ async function translatePhoto(){
         : await photoTranslateGoogle(blocks);
     }catch(err){
       if (!(err.network && S.offFallback && offlineReady())) throw err;
-      r = await photoTranslateOffline(blocks); via = "offline-auto";
+      r = await photoTranslateOffline(blocks);
     }
   }catch(e){
     if (my !== photoSeq) return;
@@ -913,37 +937,81 @@ async function translatePhoto(){
     photoButtons(false); return;
   }
   if (my !== photoSeq) return;
-  blocks.forEach((b, i) => b.tr = r.items[i] || b.t);
-  photo.from = r.from; photo.to = r.to;
+  blocks.forEach((b, i) => b.tr = r.items[i]);
+  const done = blocks.filter(b => b.tr != null);
+  photo.from = r.langs[0] || "?"; photo.to = "ru";
   vStatus(null);
   renderOverlays();
-  $("vMode").textContent = "Перевод · " + String(r.from).toUpperCase() + " → " + String(r.to).toUpperCase();
-  $("vHint").hidden = false; $("vHint").textContent = "Нажмите на фото, чтобы увидеть оригинал";
-  photoButtons(true);
-  addHistory({src: blocks.map(b => b.t).join("\n"), out: blocks.map(b => b.tr).join("\n"), from: r.from, to: r.to});
+  $("vMode").textContent = done.length ? (r.langs.length ? r.langs.map(c => c.toUpperCase()).slice(0, 3).join(", ") : "…") + " → RU" : "Нечего переводить";
+  $("vHint").hidden = false;
+  $("vHint").textContent = done.length ? "Нажмите на фото, чтобы увидеть оригинал" : "Текст на фото уже на русском или не распознан.";
+  photoButtons(done.length > 0);
+  if (done.length) addHistory({src: done.map(b => b.t).join("\n"), out: done.map(b => b.tr).join("\n"), from: photo.from, to: "ru"});
+}
+/* Free space around a box that does not touch any other text on the photo. */
+function freeSpace(b, all){
+  const lh = b.h / b.n, gap = lh * 0.25;
+  let L = 0, R = photo.w, T = 0, B = photo.h;
+  for (const o of all){
+    if (o === b) continue;
+    const vOver = o.y < b.y + b.h && o.y + o.h > b.y;          // same row
+    const hOver = o.x < b.x + b.w && o.x + o.w > b.x;          // same column
+    // each neighbour may take at most half of the gap between them, so plates never collide
+    if (vOver){
+      if (o.x + o.w <= b.x) L = Math.max(L, (o.x + o.w + b.x) / 2 + gap / 2);
+      else if (o.x >= b.x + b.w) R = Math.min(R, (o.x + b.x + b.w) / 2 - gap / 2);
+    }
+    if (hOver){
+      if (o.y + o.h <= b.y) T = Math.max(T, (o.y + o.h + b.y) / 2 + gap / 2);
+      else if (o.y >= b.y + b.h) B = Math.min(B, (o.y + b.y + b.h) / 2 - gap / 2);
+    }
+  }
+  T = Math.max(T, b.y - lh * 1.2); B = Math.min(B, b.y + b.h + lh * 1.2);
+  return {L: Math.min(L, b.x), R: Math.max(R, b.x + b.w), T: Math.min(T, b.y), B: Math.max(B, b.y + b.h)};
 }
 function renderOverlays(){
   if (!photo) return;
   const box = $("vOverlays"); box.innerHTML = "";
   const scale = $("vImg").clientWidth / photo.w;
+  if (!scale) return;
+  const MIN_FS = 9;                          // smallest comfortable size on a phone, px
   for (const b of photo.blocks){
     if (b.tr == null) continue;
+    const lh = b.h / b.n;
+    const origFs = lh * scale * 0.95;        // roughly the size of the original letters on screen
+    const free = freeSpace(b, photo.blocks);
     const el = document.createElement("div"); el.className = "ov";
-    // cover ascenders/descenders that stick out of the OCR box
-    const lh = b.h / b.n, py = lh * 0.22, px = lh * 0.15;
-    const x = Math.max(0, b.x - px), y = Math.max(0, b.y - py);
-    const w = Math.min(photo.w - x, b.w + px * 2), hh = Math.min(photo.h - y, b.h + py * 2);
-    el.style.left = (x / photo.w * 100) + "%"; el.style.top = (y / photo.h * 100) + "%";
-    el.style.width = (w / photo.w * 100) + "%"; el.style.height = (hh / photo.h * 100) + "%";
+    const sp = document.createElement("span"); sp.textContent = b.tr; el.append(sp);
     el.style.background = b.bg; el.style.color = b.fg;
-    el.textContent = b.tr;
     box.append(el);
-    // fit text into the original box
-    let fs = Math.max(7, (b.h * scale / b.n) * 0.9);
-    el.style.fontSize = fs + "px";
-    let guard = 0;
-    while ((el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1) && fs > 6 && guard++ < 40){
-      fs *= 0.92; el.style.fontSize = fs + "px";
+    // start: the OCR box plus a margin that hides ascenders/descenders
+    const px = lh * 0.15, py = lh * 0.2;
+    let x = Math.max(free.L, b.x - px), y = Math.max(free.T, b.y - py);
+    let w = Math.min(free.R, b.x + b.w + px) - x, hh = Math.min(free.B, b.y + b.h + py) - y;
+    const place = () => {
+      el.style.left = (x / photo.w * 100) + "%"; el.style.top = (y / photo.h * 100) + "%";
+      el.style.width = (w / photo.w * 100) + "%"; el.style.height = (hh / photo.h * 100) + "%";
+    };
+    const fits = fs => { sp.style.fontSize = fs + "px"; return sp.offsetHeight <= el.clientHeight + 0.5 && sp.scrollWidth <= el.clientWidth + 0.5; };
+    const fit = () => {                      // largest font that fits, never bigger than the original
+      let lo = 4, hi = Math.max(5, origFs), best = lo;
+      for (let k = 0; k < 14; k++){ const mid = (lo + hi) / 2; if (fits(mid)){ best = mid; lo = mid; } else hi = mid; }
+      sp.style.fontSize = best + "px"; return best;
+    };
+    place();
+    let fs = fit();
+    const want = Math.max(MIN_FS, origFs * 0.8);
+    // 1) widen into free space on both sides
+    for (let k = 0; k < 8 && fs < want; k++){
+      const nx = Math.max(free.L, x - w * 0.08), nr = Math.min(free.R, x + w + w * 0.08);
+      if (nr - nx <= w + 0.5) break;
+      x = nx; w = nr - nx; place(); fs = fit();
+    }
+    // 2) grow taller into free space so the text can wrap onto more lines
+    for (let k = 0; k < 8 && fs < want; k++){
+      const ny = Math.max(free.T, y - hh * 0.15), nb = Math.min(free.B, y + hh + hh * 0.15);
+      if (nb - ny <= hh + 0.5) break;
+      y = ny; hh = nb - ny; place(); fs = fit();
     }
   }
 }

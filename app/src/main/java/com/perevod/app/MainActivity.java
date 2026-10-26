@@ -76,6 +76,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
@@ -601,6 +602,20 @@ public class MainActivity extends Activity {
         return bm;
     }
 
+    /** counts: [han, kana, hangul, devanagari] */
+    private static int[] scriptCounts(Text t) {
+        int[] c = new int[4];
+        String s = t.getText();
+        for (int i = 0; i < s.length(); i++) {
+            Character.UnicodeScript sc = Character.UnicodeScript.of(s.charAt(i));
+            if (sc == Character.UnicodeScript.HAN) c[0]++;
+            else if (sc == Character.UnicodeScript.HIRAGANA || sc == Character.UnicodeScript.KATAKANA) c[1]++;
+            else if (sc == Character.UnicodeScript.HANGUL) c[2]++;
+            else if (sc == Character.UnicodeScript.DEVANAGARI) c[3]++;
+        }
+        return c;
+    }
+
     private static int letters(Text t) {
         int n = 0;
         String s = t.getText();
@@ -652,6 +667,54 @@ public class MainActivity extends Activity {
         return (int) ((sr / n) << 16 | (sg / n) << 8 | (sbl / n));
     }
 
+    /** Returns pieces of a line as {text, rect}, split at gaps wider than ~1.2 × line height. */
+    private static List<Object[]> splitLine(Text.Line line) {
+        List<Object[]> out = new ArrayList<>();
+        List<Text.Element> els = new ArrayList<>(line.getElements());
+        Rect lr = line.getBoundingBox();
+        if (els.isEmpty() || lr == null) {
+            if (lr != null) out.add(new Object[]{line.getText(), lr});
+            return out;
+        }
+        els.sort((a, b2) -> {
+            Rect ra = a.getBoundingBox(), rb = b2.getBoundingBox();
+            return (ra == null ? 0 : ra.left) - (rb == null ? 0 : rb.left);
+        });
+        int lh = Math.max(1, lr.height());
+        StringBuilder sb = new StringBuilder();
+        Rect cur = null;
+        Text.Element prev = null;
+        for (Text.Element el : els) {
+            Rect r = el.getBoundingBox();
+            if (r == null) continue;
+            if (cur != null && prev != null && prev.getBoundingBox() != null
+                    && r.left - prev.getBoundingBox().right > lh * 1.2) {
+                out.add(new Object[]{sb.toString(), new Rect(cur)});
+                sb.setLength(0);
+                cur = null;
+            }
+            String t = el.getText();
+            if (sb.length() > 0 && !(isCjk(sb.charAt(sb.length() - 1)) && !t.isEmpty() && isCjk(t.charAt(0)))) sb.append(' ');
+            sb.append(t);
+            if (cur == null) cur = new Rect(r); else cur.union(r);
+            prev = el;
+        }
+        if (cur != null && sb.length() > 0) out.add(new Object[]{sb.toString(), cur});
+        return out;
+    }
+
+    private static void putItem(JSONArray blocks, Bitmap bm, String txt, Rect r, int lines) throws Exception {
+        if (txt == null || txt.trim().isEmpty() || r == null || r.width() < 2 || r.height() < 2) return;
+        int bg = edgeColor(bm, r);
+        int lum = (int) (0.299 * ((bg >> 16) & 255) + 0.587 * ((bg >> 8) & 255) + 0.114 * (bg & 255));
+        blocks.put(new JSONObject()
+                .put("t", txt.trim())
+                .put("x", r.left).put("y", r.top).put("w", r.width()).put("h", r.height())
+                .put("n", Math.max(1, lines))
+                .put("bg", String.format("#%06X", bg & 0xFFFFFF))
+                .put("fg", lum < 140 ? "#FFFFFF" : "#1C1B22"));
+    }
+
     private void processPhoto(Uri uri) {
         photoEvent("loading", "");
         pool.execute(() -> {
@@ -666,39 +729,50 @@ public class MainActivity extends Activity {
                         TextRecognition.getClient(new KoreanTextRecognizerOptions.Builder().build()),
                         TextRecognition.getClient(new DevanagariTextRecognizerOptions.Builder().build())
                 };
-                Text best = null;
-                int bestScore = 0;
+                // Run every recognizer, then pick by the script it specialises in.
+                // (The Latin one turns CJK into junk letters, so "most letters" is a bad rule.)
+                Text[] res = new Text[recognizers.length];
                 String lastErr = null;
-                for (TextRecognizer r : recognizers) {
+                for (int k = 0; k < recognizers.length; k++) {
                     try {
-                        Text t = Tasks.await(r.process(img), 60, TimeUnit.SECONDS);
-                        int s = letters(t);
-                        if (s > bestScore) { best = t; bestScore = s; }
+                        res[k] = Tasks.await(recognizers[k].process(img), 60, TimeUnit.SECONDS);
                     } catch (Exception e) {
                         lastErr = errMsg(e);
                     } finally {
-                        r.close();
+                        recognizers[k].close();
                     }
                 }
-                if (best == null) {
-                    if (lastErr != null && bestScore == 0 && lastErr.toLowerCase(Locale.ROOT).contains("download")) {
+                double[] score = new double[5];
+                if (res[1] != null) score[1] = scriptCounts(res[1])[0];                                   // Chinese: Han
+                if (res[2] != null) { int[] c = scriptCounts(res[2]); score[2] = c[1] * 2 + c[0] * 0.5; }  // Japanese: kana
+                if (res[3] != null) score[3] = scriptCounts(res[3])[2];                                   // Korean: Hangul
+                if (res[4] != null) score[4] = scriptCounts(res[4])[3];                                   // Devanagari
+                int pick = 0;
+                double bestScript = 2;   // need at least 3 characters of a script to prefer its recognizer
+                for (int k = 1; k < 5; k++) if (score[k] > bestScript) { bestScript = score[k]; pick = k; }
+                Text best = res[pick] != null ? res[pick] : null;
+                if (best == null) for (Text t : res) if (t != null) { best = t; break; }
+                if (best == null || letters(best) == 0) {
+                    if (best == null && lastErr != null && lastErr.toLowerCase(Locale.ROOT).contains("download")) {
                         throw new Exception("Сервисы Google ещё скачивают модуль распознавания. Подождите минуту с включённым интернетом и попробуйте снова.");
                     }
                     throw new Exception("На фото не найден текст.");
                 }
                 JSONArray blocks = new JSONArray();
                 for (Text.TextBlock b : best.getTextBlocks()) {
-                    Rect r = b.getBoundingBox();
-                    String txt = joinLines(b);
-                    if (r == null || txt.trim().isEmpty()) continue;
-                    int bg = edgeColor(bm, r);
-                    int lum = (int) (0.299 * ((bg >> 16) & 255) + 0.587 * ((bg >> 8) & 255) + 0.114 * (bg & 255));
-                    blocks.put(new JSONObject()
-                            .put("t", txt)
-                            .put("x", r.left).put("y", r.top).put("w", r.width()).put("h", r.height())
-                            .put("n", Math.max(1, b.getLines().size()))
-                            .put("bg", String.format("#%06X", bg & 0xFFFFFF))
-                            .put("fg", lum < 140 ? "#FFFFFF" : "#1C1B22"));
+                    // split each line into separate pieces where there is a wide gap (UI labels, table cells)
+                    List<List<Object[]>> lines = new ArrayList<>();
+                    boolean multiSeg = false;
+                    for (Text.Line l : b.getLines()) {
+                        List<Object[]> segs = splitLine(l);
+                        if (segs.size() > 1) multiSeg = true;
+                        lines.add(segs);
+                    }
+                    if (lines.size() > 1 && !multiSeg && b.getBoundingBox() != null) {
+                        putItem(blocks, bm, joinLines(b), b.getBoundingBox(), b.getLines().size());   // a paragraph
+                    } else {
+                        for (List<Object[]> segs : lines) for (Object[] sg : segs) putItem(blocks, bm, (String) sg[0], (Rect) sg[1], 1);
+                    }
                 }
                 ByteArrayOutputStream jpg = new ByteArrayOutputStream();
                 bm.compress(Bitmap.CompressFormat.JPEG, 85, jpg);
