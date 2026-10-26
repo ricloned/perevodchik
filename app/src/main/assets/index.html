@@ -10,7 +10,7 @@
   --bg:#f4f1f8; --bg-2:#fbf1ec; --surface:#fffcfa; --surface-2:#f8f3fc; --line:#e9e2f0;
   --fg:#2e2a3a; --muted:#867e97; --accent:#7c6fd0; --accent-fg:#ffffff; --accent-soft:#ece8fb;
   --peach:#c9805f; --peach-soft:#fdebe2; --mint:#4f8f7a; --mint-soft:#e1f2ea;
-  --danger:#c0504d; --scrim:rgba(46,42,58,.35); --shadow:0 2px 14px rgba(124,111,208,.10);
+  --danger:#c0504d; --danger-soft:#fbe7e5; --scrim:rgba(46,42,58,.35); --shadow:0 2px 14px rgba(124,111,208,.10);
   --f-body:Roboto, "Noto Sans", system-ui, sans-serif;
   --f-mono:"Roboto Mono", "Noto Sans Mono", ui-monospace, monospace;
 }
@@ -18,9 +18,21 @@
   --bg:#1b1922; --bg-2:#231d25; --surface:#25222f; --surface-2:#2a2637; --line:#383349;
   --fg:#ece8f4; --muted:#a69fb8; --accent:#b4a9f5; --accent-fg:#1b1922; --accent-soft:#363052;
   --peach:#eeb39a; --peach-soft:#3b2d2b; --mint:#93d3bd; --mint-soft:#243731;
-  --danger:#f2a8a3; --scrim:rgba(0,0,0,.55); --shadow:0 2px 14px rgba(0,0,0,.25); color-scheme:dark }}
+  --danger:#f2a8a3; --danger-soft:#3d2627; --scrim:rgba(0,0,0,.55); --shadow:0 2px 14px rgba(0,0,0,.25); color-scheme:dark }}
 
 [hidden]{display:none!important}
+.mic-wrap{display:flex;align-items:center;gap:0}
+.mic{color:var(--accent)}
+.mic.rec{background:var(--danger-soft);color:var(--danger);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(192,80,77,.35)}50%{box-shadow:0 0 0 8px rgba(192,80,77,0)}}
+.vlang{border:1px solid var(--line);background:var(--surface-2);color:var(--muted);font:500 11px/1 var(--f-mono);border-radius:8px;padding:6px 7px;margin-right:2px}
+.update{background:var(--mint-soft);border:1px solid var(--line);border-radius:18px;padding:12px 12px 12px 16px;display:flex;align-items:center;gap:10px}
+.update .txt{flex:1;min-width:0;font-size:14px;color:var(--fg)}
+.update .txt small{display:block;color:var(--muted);font-size:12px}
+.update .upd-btn{border:0;background:var(--mint);color:var(--surface);border-radius:12px;padding:10px 14px;font:600 14px var(--f-body);flex:none}
+.update .upd-btn:disabled{opacity:.6}
+.update .x{flex:none;width:36px;height:36px}
+@media (prefers-reduced-motion:reduce){.mic.rec{animation:none}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;margin:0}
 body{background:linear-gradient(180deg,var(--bg-2) 0,var(--bg) 260px) var(--bg);color:var(--fg);font:16px/1.5 var(--f-body);display:flex;flex-direction:column;overflow:hidden}
@@ -49,7 +61,8 @@ textarea::placeholder{color:var(--muted)}
 .out.err{color:var(--danger);font-size:15px}
 .card-foot{display:flex;align-items:center;justify-content:space-between;gap:4px;padding:0 4px 4px 14px}
 .meta{font:400 12px/1 var(--f-mono);color:var(--muted)}
-.tools{display:flex;gap:0}
+.tools{display:flex;gap:0;flex:none}
+.card-head > .chip{min-width:0;overflow:hidden;text-overflow:ellipsis}
 
 .notes{padding:12px 14px;font-size:15px;white-space:pre-wrap;border-top:1px solid var(--line);color:var(--fg)}
 .notes b{display:block;font:500 11px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
@@ -121,10 +134,23 @@ input:focus{border-color:var(--accent)}
 </div>
 
 <main id="main">
+  <section class="update" id="updBanner" hidden>
+    <div class="txt"><span id="updTitle">Доступно обновление</span><small id="updSub"></small></div>
+    <button class="upd-btn" id="updBtn">Обновить</button>
+    <button class="icon-btn x" id="updClose" aria-label="Скрыть">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </section>
   <section class="card">
     <div class="card-head">
       <span class="chip idle" id="detChip">язык определится сам</span>
       <div class="tools">
+        <div class="mic-wrap" id="micWrap" hidden>
+          <button class="vlang" id="vlangBtn" aria-label="Язык диктовки">RU</button>
+          <button class="icon-btn mic" id="micBtn" aria-label="Диктовать">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8"/></svg>
+          </button>
+        </div>
         <button class="icon-btn" id="pasteBtn" aria-label="Вставить">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
         </button>
@@ -220,6 +246,11 @@ input:focus{border-color:var(--accent)}
 
     <label class="switch" for="autoTr"><span>Переводить во время набора (Google)</span><input type="checkbox" id="autoTr"></label>
 
+    <div class="field">
+      <span class="lbl">Обновления</span>
+      <div class="row"><button class="small-btn" id="checkUpdBtn">Проверить обновления</button><p class="status" id="verStatus"></p></div>
+    </div>
+
     <button class="small-btn" id="closeSettings">Готово</button>
   </div>
 </div>
@@ -270,7 +301,10 @@ const S = {
   tone: prefs.get("tone","auto"),
   auto: prefs.get("auto", true),
   history: prefs.get("history", []),
-  draft: prefs.get("draft", "")
+  draft: prefs.get("draft", ""),
+  voiceLang: prefs.get("voiceLang", "ru"),
+  updChecked: prefs.get("updChecked", 0),
+  updDismissed: prefs.get("updDismissed", "")
 };
 if (!byCode[S.target]) S.target = "en";
 if (S.engine !== "google" && S.engine !== "ai") S.engine = "google";
@@ -446,6 +480,7 @@ function renderLangs(){
 }
 function setTarget(c){
   S.target = c; save("target"); renderLangs(); closeSheets();
+  if (native && native.startVoice) renderVoiceLang();
   if (last && last.from === "ru" && src.value.trim()) run();
 }
 function setChips(r){
@@ -609,6 +644,96 @@ $("clearHist").onclick = () => { S.history = []; save("history"); renderHistory(
 
 /* text shared from other apps / text-selection menu */
 window.__incoming = text => { closeSheets(); src.value = text; updCount(); autosize(); saveDraft(); run(); };
+
+/* ---------- voice input ---------- */
+const VOICE_TAG = {ru:"ru-RU", en:"en-US", zh:"zh-CN", pt:"pt-BR", es:"es-ES", fr:"fr-FR", de:"de-DE", ja:"ja-JP", ko:"ko-KR", it:"it-IT", tr:"tr-TR", uk:"uk-UA", pl:"pl-PL", ar:"ar-SA", hi:"hi-IN"};
+let recording = false, voiceBase = "";
+function voiceCode(){ return S.voiceLang === "target" ? S.target : "ru"; }
+function renderVoiceLang(){ $("vlangBtn").textContent = voiceCode().toUpperCase(); }
+function joinVoice(t){ t = (t || "").trim(); return voiceBase ? (t ? voiceBase + " " + t : voiceBase) : t; }
+function setRecording(on){
+  recording = on; $("micBtn").classList.toggle("rec", on);
+  $("micBtn").setAttribute("aria-label", on ? "Остановить запись" : "Диктовать");
+  if (on){ const d = $("detChip"); d.className = "chip"; d.textContent = "● Запись… говорите"; }
+}
+window.__voice = (type, text) => {
+  if (type === "start"){ setRecording(true); return; }
+  if (type === "partial"){ src.value = joinVoice(text); updCount(); autosize(); return; }
+  if (type === "final"){
+    setRecording(false);
+    src.value = joinVoice(text); updCount(); autosize(); saveDraft();
+    setChips(null);
+    if (src.value.trim()) run();
+    return;
+  }
+  if (type === "error"){ setRecording(false); setChips(null); if (native) native.toast(text); }
+};
+if (native && native.startVoice){
+  $("micWrap").hidden = false; renderVoiceLang();
+  $("micBtn").onclick = () => {
+    if (recording){ $("detChip").textContent = "Распознаю…"; native.stopVoice(); return; }
+    native.stopSpeaking && native.stopSpeaking();
+    voiceBase = src.value.trim(); src.blur();
+    native.startVoice(VOICE_TAG[voiceCode()] || voiceCode());
+  };
+  $("vlangBtn").onclick = () => {
+    if (recording) return;
+    S.voiceLang = S.voiceLang === "ru" ? "target" : "ru"; save("voiceLang"); renderVoiceLang();
+    native.toast("Диктовка: " + langName(voiceCode()));
+  };
+}
+
+/* ---------- self-update from GitHub Releases ---------- */
+let updInfo = null;
+async function checkUpdates(manual){
+  if (!native || !native.updateRepo) return;
+  const st = $("verStatus");
+  if (manual){ st.className = "status"; st.textContent = "Проверяю…"; }
+  S.updChecked = Date.now(); save("updChecked");
+  const r = await http("GET", "https://api.github.com/repos/" + native.updateRepo() + "/releases/latest", {"Accept":"application/vnd.github+json"});
+  if (!r.ok){
+    if (manual){ st.className = "status bad"; st.textContent = r.status === 404 ? "Релизов нет или репозиторий закрытый (обновления работают только из публичного)." : "Не удалось проверить (" + (r.status || "нет сети") + ")."; }
+    return;
+  }
+  let rel; try{ rel = JSON.parse(r.text); }catch(e){ return; }
+  const m = String(rel.tag_name || "").match(/(\d+)\s*$/);
+  const remote = m ? parseInt(m[1], 10) : 0;
+  const asset = (rel.assets || []).find(a => /\.apk$/i.test(a.name));
+  const current = native.versionCode();
+  if (remote > current && asset){
+    updInfo = {tag: rel.tag_name, url: asset.browser_download_url, size: asset.size};
+    if (manual || S.updDismissed !== rel.tag_name) showUpdate();
+    if (manual){ st.className = "status ok"; st.textContent = "Есть новая версия " + rel.tag_name; closeSheets(); }
+  } else if (manual){
+    st.className = "status ok"; st.textContent = "У вас последняя версия (" + native.versionName() + ").";
+  }
+}
+function showUpdate(){
+  $("updBanner").hidden = false;
+  $("updTitle").textContent = "Доступна версия " + updInfo.tag.replace(/^v/, "");
+  $("updSub").textContent = "Сейчас " + native.versionName() + (updInfo.size ? " · " + (updInfo.size / 1048576).toFixed(1) + " МБ" : "");
+  $("updBtn").disabled = false; $("updBtn").textContent = "Обновить";
+}
+$("updBtn").onclick = () => {
+  if (!updInfo) return;
+  $("updBtn").disabled = true; $("updBtn").textContent = "…";
+  $("updSub").textContent = "Скачиваю…";
+  native.downloadAndInstall(updInfo.url);
+};
+$("updClose").onclick = () => { $("updBanner").hidden = true; if (updInfo){ S.updDismissed = updInfo.tag; save("updDismissed"); } };
+window.__update = (type, value) => {
+  const sub = $("updSub"), btn = $("updBtn");
+  if (type === "progress"){ sub.textContent = "Скачиваю… " + value + "%"; return; }
+  if (type === "installing"){ sub.textContent = "Открываю установщик…"; return; }
+  if (type === "permission"){ sub.textContent = "Разрешите установку из этого приложения и нажмите «Обновить» ещё раз."; btn.disabled = false; btn.textContent = "Обновить"; return; }
+  if (type === "done"){ sub.textContent = "Готово"; return; }
+  if (type === "error"){ sub.textContent = value; btn.disabled = false; btn.textContent = "Повторить"; }
+};
+$("checkUpdBtn").onclick = () => checkUpdates(true);
+if (native && native.versionName){
+  $("verStatus").textContent = "Версия " + native.versionName();
+  setTimeout(() => checkUpdates(false), 1200); // one request per launch
+} else { $("checkUpdBtn").parentElement.parentElement.hidden = true; }
 
 /* init */
 renderLangs(); renderEnginePill(); syncAiFields(); renderHistory();
