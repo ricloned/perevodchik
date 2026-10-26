@@ -11,6 +11,9 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -28,6 +31,19 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import com.google.android.gms.tasks.Tasks;
+import com.google.mlkit.common.model.DownloadConditions;
+import com.google.mlkit.common.model.RemoteModelManager;
+import com.google.mlkit.nl.languageid.LanguageIdentification;
+import com.google.mlkit.nl.languageid.LanguageIdentificationOptions;
+import com.google.mlkit.nl.languageid.LanguageIdentifier;
+import com.google.mlkit.nl.translate.TranslateLanguage;
+import com.google.mlkit.nl.translate.TranslateRemoteModel;
+import com.google.mlkit.nl.translate.Translation;
+import com.google.mlkit.nl.translate.Translator;
+import com.google.mlkit.nl.translate.TranslatorOptions;
+
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -41,6 +57,13 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.Iterator;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -68,6 +91,12 @@ public class MainActivity extends Activity {
     private String pendingVoiceLang = null;
     private final StringBuilder voiceText = new StringBuilder();
     private String voicePartial = "";
+
+    // offline translation
+    private final RemoteModelManager modelManager = RemoteModelManager.getInstance();
+    private final Map<String, Translator> translators = new HashMap<>();
+    private LanguageIdentifier langId;
+    private volatile boolean downloading = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -157,6 +186,8 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         if (tts != null) tts.shutdown();
         if (recognizer != null) recognizer.destroy();
+        synchronized (translators) { for (Translator t : translators.values()) t.close(); translators.clear(); }
+        if (langId != null) langId.close();
         pool.shutdownNow();
         if (web != null) web.destroy();
         super.onDestroy();
@@ -224,6 +255,7 @@ public class MainActivity extends Activity {
         i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, voiceLang);
         i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
         i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+        if (!isOnline()) i.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
         i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 6000L);
         i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 6000L);
         i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 15000L);
@@ -468,6 +500,194 @@ public class MainActivity extends Activity {
         }
     }
 
+    /* ================= Network ================= */
+
+    private boolean isOnline() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            Network n = cm.getActiveNetwork();
+            if (n == null) return false;
+            NetworkCapabilities c = cm.getNetworkCapabilities(n);
+            return c != null && c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    private boolean onWifi() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            NetworkCapabilities c = cm.getNetworkCapabilities(cm.getActiveNetwork());
+            return c != null && (c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                    || c.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /* ================= Offline translation (ML Kit, on-device) ================= */
+
+    private void offlineEvent(String type, String json) {
+        js("window.__offline && window.__offline(" + JSONObject.quote(type) + "," + JSONObject.quote(json == null ? "" : json) + ")");
+    }
+
+    private static String errMsg(Exception e) {
+        Throwable t = e instanceof ExecutionException && e.getCause() != null ? e.getCause() : e;
+        String m = t.getMessage();
+        return m == null ? t.getClass().getSimpleName() : m;
+    }
+
+    private Set<String> downloadedModels() throws Exception {
+        Set<TranslateRemoteModel> models = Tasks.await(modelManager.getDownloadedModels(TranslateRemoteModel.class), 30, TimeUnit.SECONDS);
+        Set<String> out = new HashSet<>();
+        for (TranslateRemoteModel m : models) out.add(m.getLanguage());
+        return out;
+    }
+
+    private String downloadedJson() {
+        try {
+            return new JSONArray(downloadedModels()).toString();
+        } catch (Exception e) {
+            return "[]";
+        }
+    }
+
+    private synchronized LanguageIdentifier langId() {
+        if (langId == null) {
+            langId = LanguageIdentification.getClient(
+                    new LanguageIdentificationOptions.Builder().setConfidenceThreshold(0.35f).build());
+        }
+        return langId;
+    }
+
+    private Translator translator(String from, String to) {
+        String key = from + ">" + to;
+        synchronized (translators) {
+            Translator t = translators.get(key);
+            if (t == null) {
+                t = Translation.getClient(new TranslatorOptions.Builder()
+                        .setSourceLanguage(from).setTargetLanguage(to).build());
+                translators.put(key, t);
+            }
+            return t;
+        }
+    }
+
+    private static String norm(String tag) {
+        if (tag == null) return "und";
+        tag = tag.toLowerCase(Locale.ROOT);
+        if (tag.equals("iw")) return "he";
+        if (tag.equals("nb") || tag.equals("nn")) return "no";
+        int dash = tag.indexOf('-');
+        return dash > 0 ? tag.substring(0, dash) : tag;
+    }
+
+    private String detectOffline(String text) throws Exception {
+        String sample = text.length() > 1000 ? text.substring(0, 1000) : text;
+        String tag = norm(Tasks.await(langId().identifyLanguage(sample), 20, TimeUnit.SECONDS));
+        if (!"und".equals(tag)) return tag;
+        // fallback by script
+        int cyr = 0, letters = 0;
+        for (int i = 0; i < sample.length(); i++) {
+            char ch = sample.charAt(i);
+            if (Character.isLetter(ch)) {
+                letters++;
+                if (Character.UnicodeBlock.of(ch) == Character.UnicodeBlock.CYRILLIC) cyr++;
+            }
+        }
+        return letters > 0 && cyr * 2 >= letters ? "ru" : "en";
+    }
+
+    private void offlineTranslate(String id, String text, String target) {
+        pool.execute(() -> {
+            boolean ok = false;
+            String payload;
+            try {
+                String from = TranslateLanguage.fromLanguageTag(detectOffline(text));
+                if (from == null) throw new Exception("unsupported:" + detectOffline(text));
+                String to = TranslateLanguage.RUSSIAN.equals(from) ? TranslateLanguage.fromLanguageTag(target) : TranslateLanguage.RUSSIAN;
+                if (to == null) throw new Exception("unsupported:" + target);
+                if (from.equals(to)) {
+                    payload = new JSONObject().put("from", from).put("to", to).put("text", text).toString();
+                    ok = true;
+                } else {
+                    Set<String> have = downloadedModels();
+                    LinkedHashSet<String> missing = new LinkedHashSet<>();
+                    if (!have.contains(from) && !TranslateLanguage.ENGLISH.equals(from)) missing.add(from);
+                    if (!have.contains(to) && !TranslateLanguage.ENGLISH.equals(to)) missing.add(to);
+                    if (!missing.isEmpty()) throw new Exception("missing:" + String.join(",", missing));
+                    Translator t = translator(from, to);
+                    StringBuilder out = new StringBuilder();
+                    String[] lines = text.split("\n", -1);
+                    for (int i = 0; i < lines.length; i++) {
+                        String line = lines[i];
+                        if (line.trim().isEmpty()) out.append(line);
+                        else out.append(Tasks.await(t.translate(line), 60, TimeUnit.SECONDS));
+                        if (i < lines.length - 1) out.append('\n');
+                    }
+                    payload = new JSONObject().put("from", from).put("to", to).put("text", out.toString()).toString();
+                    ok = true;
+                }
+            } catch (Exception e) {
+                payload = errMsg(e);
+            }
+            js("window.__offlineResult(" + JSONObject.quote(id) + "," + ok + "," + JSONObject.quote(payload) + ")");
+        });
+    }
+
+    private void offlineDownload(String codesJson, boolean wifiOnly) {
+        if (downloading) return;
+        downloading = true;
+        pool.execute(() -> {
+            try {
+                if (!isOnline()) throw new Exception("Нет интернета для скачивания.");
+                if (wifiOnly && !onWifi()) throw new Exception("Подключитесь к Wi‑Fi или отключите «Скачивать только по Wi‑Fi».");
+                LinkedHashSet<String> codes = new LinkedHashSet<>();
+                codes.add(TranslateLanguage.RUSSIAN);
+                codes.add(TranslateLanguage.ENGLISH);
+                JSONArray a = new JSONArray(codesJson);
+                for (int i = 0; i < a.length(); i++) {
+                    String c = TranslateLanguage.fromLanguageTag(a.getString(i));
+                    if (c != null) codes.add(c);
+                }
+                Set<String> have = downloadedModels();
+                codes.removeAll(have);
+                DownloadConditions cond = wifiOnly
+                        ? new DownloadConditions.Builder().requireWifi().build()
+                        : new DownloadConditions.Builder().build();
+                int i = 0, total = codes.size();
+                for (String c : codes) {
+                    offlineEvent("progress", new JSONObject().put("code", c).put("index", i).put("total", total).toString());
+                    Tasks.await(modelManager.download(new TranslateRemoteModel.Builder(c).build(), cond), 20, TimeUnit.MINUTES);
+                    i++;
+                }
+                offlineEvent("done", downloadedJson());
+            } catch (Exception e) {
+                offlineEvent("error", errMsg(e));
+                offlineEvent("list", downloadedJson());
+            } finally {
+                downloading = false;
+            }
+        });
+    }
+
+    private void offlineDelete(String code) {
+        pool.execute(() -> {
+            try {
+                Tasks.await(modelManager.deleteDownloadedModel(new TranslateRemoteModel.Builder(code).build()), 60, TimeUnit.SECONDS);
+                synchronized (translators) {
+                    for (Iterator<Map.Entry<String, Translator>> it = translators.entrySet().iterator(); it.hasNext(); ) {
+                        Map.Entry<String, Translator> en = it.next();
+                        if (en.getKey().startsWith(code + ">") || en.getKey().endsWith(">" + code)) { en.getValue().close(); it.remove(); }
+                    }
+                }
+            } catch (Exception e) {
+                offlineEvent("error", errMsg(e));
+            }
+            offlineEvent("list", downloadedJson());
+        });
+    }
+
     /** Methods callable from the page as window.Android.* */
     private class Bridge {
 
@@ -608,6 +828,37 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void downloadAndInstall(final String url) {
             MainActivity.this.downloadAndInstall(url);
+        }
+
+        /* offline: results in window.__offlineResult(id, ok, payload); events in window.__offline(type, json) */
+        @JavascriptInterface
+        public String offlineSupported() {
+            return new JSONArray(TranslateLanguage.getAllLanguages()).toString();
+        }
+
+        @JavascriptInterface
+        public void offlineList() {
+            pool.execute(() -> offlineEvent("list", downloadedJson()));
+        }
+
+        @JavascriptInterface
+        public void offlineDownload(String codesJson, boolean wifiOnly) {
+            MainActivity.this.offlineDownload(codesJson, wifiOnly);
+        }
+
+        @JavascriptInterface
+        public void offlineDelete(String code) {
+            MainActivity.this.offlineDelete(code);
+        }
+
+        @JavascriptInterface
+        public void offlineTranslate(String id, String text, String target) {
+            MainActivity.this.offlineTranslate(id, text, target);
+        }
+
+        @JavascriptInterface
+        public boolean isOnline() {
+            return MainActivity.this.isOnline();
         }
     }
 }

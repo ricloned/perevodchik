@@ -6,7 +6,7 @@ def runNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
 
 android {
     namespace 'com.perevod.app'
-    compileSdk 34
+    compileSdk 35
 
     defaultConfig {
         applicationId 'com.perevod.app'
@@ -43,4 +43,10 @@ android {
         checkReleaseBuilds false
         abortOnError false
     }
+}
+
+dependencies {
+    // офлайн-перевод на устройстве и офлайн-определение языка
+    implementation 'com.google.mlkit:translate:17.0.3'
+    implementation 'com.google.mlkit:language-id:17.0.6'
 }
